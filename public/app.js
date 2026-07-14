@@ -497,7 +497,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     btnGenerateContent.disabled = true;
     articleContentTextarea.value = "Đang tạo nội dung bài viết bằng AI. Vui lòng chờ...";
-    saveConfig();
+    await saveConfig();
 
     try {
       const res = await fetch("/api/openai/generate-content", {
@@ -592,7 +592,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       btn.disabled = true;
       appendLocalLog(`============== KHỞI CHẠY TẠO ẢNH ${index} ==============`, "info");
-      saveConfig();
+      await saveConfig();
 
       try {
         const res = await fetch("/api/chrome/generate-single-image", {
@@ -642,7 +642,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     btnPushNotion.disabled = true;
     appendLocalLog("============== ĐẨY BÀI VIẾT LÊN NOTION ==============", "info");
-    saveConfig();
+    await saveConfig();
 
     try {
       appendLocalLog("Đang đồng bộ bài viết và thiết lập trạng thái 'Báo IT đăng' trên Notion...", "info");
