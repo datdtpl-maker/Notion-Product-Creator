@@ -17,6 +17,7 @@ const { promisify } = require("util");
 const { Client: NotionClient } = require("@notionhq/client");
 const OpenAI = require("openai");
 const { chromium } = require("playwright");
+const nodeCrypto = require("crypto");
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -60,6 +61,7 @@ const LEGACY_CONFIG_PATH = isElectron
 
 // System logs buffer for frontend polling
 let logs = [];
+let pendingGoogleDriveOAuth = null;
 const addLog = (message, type = "info") => {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = { timestamp, message, type };
@@ -234,6 +236,10 @@ async function loadConfig() {
     openAiApiKey: "",
     notionApiKey: "",
     defaultDriveParent: "",
+    googleDriveClientId: "",
+    googleDriveAccessToken: "",
+    googleDriveRefreshToken: "",
+    googleDriveTokenExpiry: 0,
     chromeDebugPort: 9222,
     chromeUserDataDir: path.join(configDir, "chatgpt_profile"),
     prompts: []
@@ -374,7 +380,9 @@ app.post("/api/logs/clear", (req, res) => {
 // Load configuration
 app.get("/api/config", async (req, res) => {
   const cfg = await loadConfig();
-  res.json(cfg);
+  // OAuth tokens are only needed by the backend. Do not expose them to the renderer.
+  const { googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = cfg;
+  res.json(safeConfig);
 });
 
 // Save configuration
@@ -388,6 +396,85 @@ app.post("/api/config", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get("/api/google-drive/status", async (req, res) => {
+  const config = await loadConfig();
+  res.json({
+    configured: Boolean(config.googleDriveClientId),
+    connected: Boolean(config.googleDriveRefreshToken || (config.googleDriveAccessToken && Number(config.googleDriveTokenExpiry) > Date.now()))
+  });
+});
+
+app.post("/api/google-drive/start-auth", async (req, res) => {
+  try {
+    const config = await loadConfig();
+    const clientId = config.googleDriveClientId?.trim();
+    if (!clientId || !clientId.endsWith(".apps.googleusercontent.com")) {
+      return res.status(400).json({ error: "Hãy nhập Google OAuth Client ID dạng ...apps.googleusercontent.com và lưu cấu hình trước." });
+    }
+
+    const state = nodeCrypto.randomBytes(24).toString("base64url");
+    const verifier = nodeCrypto.randomBytes(48).toString("base64url");
+    const challenge = nodeCrypto.createHash("sha256").update(verifier).digest("base64url");
+    const redirectUri = "http://127.0.0.1:3000/api/google-drive/oauth/callback";
+    pendingGoogleDriveOAuth = { state, verifier, redirectUri, clientId };
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "https://www.googleapis.com/auth/drive.metadata.readonly",
+      access_type: "offline",
+      prompt: "consent",
+      state,
+      code_challenge: challenge,
+      code_challenge_method: "S256"
+    });
+    res.json({ success: true, authUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/google-drive/oauth/callback", async (req, res) => {
+  const pending = pendingGoogleDriveOAuth;
+  try {
+    if (req.query.error) throw new Error(`Google từ chối cấp quyền: ${req.query.error}`);
+    if (!pending || req.query.state !== pending.state || !req.query.code) throw new Error("Phiên xác thực Google Drive không hợp lệ hoặc đã hết hạn.");
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: String(req.query.code),
+        client_id: pending.clientId,
+        redirect_uri: pending.redirectUri,
+        grant_type: "authorization_code",
+        code_verifier: pending.verifier
+      })
+    });
+    const tokens = await response.json();
+    if (!response.ok || !tokens.access_token) throw new Error(tokens.error_description || "Không đổi được mã xác thực Google Drive.");
+    const config = await loadConfig();
+    await saveConfig({
+      ...config,
+      googleDriveAccessToken: tokens.access_token,
+      googleDriveRefreshToken: tokens.refresh_token || config.googleDriveRefreshToken || "",
+      googleDriveTokenExpiry: Date.now() + Number(tokens.expires_in || 3600) * 1000
+    });
+    addLog("Đã kết nối Google Drive thành công.", "success");
+    res.type("html").send("<html><body style='font-family:system-ui;text-align:center;padding:48px'><h2>Đã kết nối Google Drive</h2><p>Bạn có thể đóng cửa sổ này và quay lại Notion Product Creator.</p><script>setTimeout(() => window.close(), 1200)</script></body></html>");
+  } catch (err) {
+    addLog(`Kết nối Google Drive thất bại: ${err.message}`, "error");
+    res.status(400).type("html").send(`<html><body style='font-family:system-ui;padding:48px'><h2>Kết nối Google Drive thất bại</h2><p>${String(err.message).replace(/[<>&]/g, "")}</p></body></html>`);
+  } finally {
+    pendingGoogleDriveOAuth = null;
+  }
+});
+
+app.post("/api/app/clear-product-cache", (req, res) => {
+  logs = [];
+  res.json({ success: true, message: "Đã xóa cache phiên sản phẩm. API Key, Notion token, Google Drive OAuth và prompt vẫn được giữ lại." });
 });
 
 // Test OpenAI API Key
@@ -677,14 +764,82 @@ async function getDriveFolderId(folderPath) {
   return null;
 }
 
-async function resolveDriveFolderUrl(folderPath, suppliedParentUrl) {
+function escapeGoogleDriveQueryValue(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function getGoogleDriveAccessToken() {
+  const config = await loadConfig();
+  if (config.googleDriveAccessToken && Number(config.googleDriveTokenExpiry) > Date.now() + 30_000) {
+    return config.googleDriveAccessToken;
+  }
+  if (!config.googleDriveClientId || !config.googleDriveRefreshToken) {
+    throw new Error("Chưa kết nối Google Drive. Hãy nhập Client ID rồi bấm Kết nối Google Drive.");
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: config.googleDriveClientId,
+      refresh_token: config.googleDriveRefreshToken,
+      grant_type: "refresh_token"
+    })
+  });
+  const tokens = await response.json();
+  if (!response.ok || !tokens.access_token) {
+    throw new Error(tokens.error_description || "Không thể làm mới quyền Google Drive. Hãy kết nối lại Google Drive.");
+  }
+  await saveConfig({
+    ...config,
+    googleDriveAccessToken: tokens.access_token,
+    googleDriveTokenExpiry: Date.now() + Number(tokens.expires_in || 3600) * 1000
+  });
+  return tokens.access_token;
+}
+
+async function findGoogleDriveChildFolderId(parentUrl, productName) {
+  const parentId = getGoogleDriveFolderId(parentUrl);
+  if (!parentId || !productName) return null;
+
+  const accessToken = await getGoogleDriveAccessToken();
+  const query = `'${parentId}' in parents and name = '${escapeGoogleDriveQueryValue(productName)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const params = new URLSearchParams({
+    q: query,
+    fields: "files(id,name)",
+    pageSize: "10",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true"
+  });
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || "Không thể tìm thư mục sản phẩm trên Google Drive.");
+  const folders = data.files || [];
+  if (!folders.length) return null;
+  if (folders.length > 1) {
+    throw new Error(`Có nhiều thư mục con tên "${productName}" trong Google Drive. Hãy đổi tên để mỗi sản phẩm có một thư mục riêng.`);
+  }
+  return folders[0].id;
+}
+
+async function resolveDriveFolderUrl(folderPath, suppliedParentUrl, productName) {
   if (suppliedParentUrl && !getGoogleDriveFolderId(suppliedParentUrl)) {
     throw new Error("Link Google Drive thư mục cha không hợp lệ. Hãy dán link có dạng drive.google.com/drive/u/0/folders/<ID>.");
   }
   // The local product folder is the source of truth. Its Drive File Provider
   // metadata maps to the child folder's real remote ID, not the parent's ID.
   const driveId = await getDriveFolderId(folderPath);
-  return driveId ? toGoogleDriveFolderUrl(driveId) : null;
+  if (driveId) return toGoogleDriveFolderUrl(driveId);
+
+  // Google Drive for macOS may not expose local metadata. OAuth provides a
+  // reliable remote fallback from the true parent link and product folder name.
+  if (suppliedParentUrl && productName) {
+    const remoteChildId = await findGoogleDriveChildFolderId(suppliedParentUrl, productName);
+    if (remoteChildId) return toGoogleDriveFolderUrl(remoteChildId);
+  }
+  return null;
 }
 
 // Helper: Query coordination page by title
@@ -747,7 +902,7 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
 
     // Get Drive ID
     addLog(`[Ảnh ${promptIndex}] Đang lấy Google Drive ID...`, "info");
-    const driveUrl = await resolveDriveFolderUrl(targetFolder, suppliedDriveUrl);
+    const driveUrl = await resolveDriveFolderUrl(targetFolder, suppliedDriveUrl, productName);
     if (!driveUrl) {
       addLog(`[Ảnh ${promptIndex}] Không đọc được Google Drive ID trên máy này. Ảnh vẫn được lưu local; hãy dán link thư mục Drive thật trước khi đẩy bài lên Notion.`, "warning");
     }
@@ -1137,10 +1292,10 @@ app.post("/api/notion/sync", async (req, res) => {
     if (driveParent) {
       addLog(`Đang lấy Google Drive ID của thư mục sản phẩm để đồng bộ liên kết...`, "info");
       const targetFolder = path.join(driveParent, productName.replace(/[\\/:*?"<>|]/g, ""));
-      finalDriveUrl = await resolveDriveFolderUrl(targetFolder, driveUrl);
+      finalDriveUrl = await resolveDriveFolderUrl(targetFolder, driveUrl, productName);
     }
     if (!finalDriveUrl) {
-      throw new Error("Không đọc được Google Drive ID của thư mục sản phẩm. Hãy kiểm tra thư mục con đã đồng bộ xong trong Google Drive Desktop; link thư mục cha không thể thay thế ID thư mục con khi metadata local bị thiếu.");
+      throw new Error("Không tìm được thư mục con của sản phẩm trên Google Drive. Hãy kiểm tra tên thư mục, dán đúng link thư mục cha và bấm Kết nối Google Drive nếu metadata local bị thiếu.");
     }
 
     // 1. Create page in "Công việc của Tây" database containing the Markdown blocks

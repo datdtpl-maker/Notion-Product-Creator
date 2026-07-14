@@ -338,6 +338,14 @@ textarea:focus {
   flex-grow: 1;
 }
 
+.google-drive-auth-row {
+  align-items: center;
+}
+
+.google-drive-auth-row .desc-text {
+  min-width: 0;
+}
+
 /* Buttons */
 .btn {
   font-family: var(--font-sans);

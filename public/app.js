@@ -2,11 +2,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // Elements
   const openaiKeyInput = document.getElementById("openai-key");
   const notionKeyInput = document.getElementById("notion-key");
+  const googleDriveClientIdInput = document.getElementById("google-drive-client-id");
+  const btnConnectGoogleDrive = document.getElementById("btn-connect-google-drive");
+  const googleDriveStatus = document.getElementById("google-drive-status");
   const btnToggleNotionKey = document.getElementById("btn-toggle-notion-key");
   const btnCheckKey = document.getElementById("btn-check-key");
   const driveParentInput = document.getElementById("drive-parent");
   const btnSelectFolder = document.getElementById("btn-select-folder");
   const productDriveUrlInput = document.getElementById("product-drive-url");
+  const btnClearProductCache = document.getElementById("btn-clear-product-cache");
   
   const prodNameInput = document.getElementById("prod-name");
   const prodCategoryInput = document.getElementById("prod-category");
@@ -129,6 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
       
       openaiKeyInput.value = config.openAiApiKey || "";
       notionKeyInput.value = config.notionApiKey || "";
+      googleDriveClientIdInput.value = config.googleDriveClientId || "";
       driveParentInput.value = config.defaultDriveParent || "";
       facebookPageUrlInput.value = config.facebookPageUrl || "";
       facebookMediaParentInput.value = config.facebookMediaParent || config.defaultDriveParent || "";
@@ -152,6 +157,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
       updateTargetFolderDisplay();
+      await refreshGoogleDriveStatus();
     } catch (err) {
       console.error("Lỗi load config:", err);
     }
@@ -162,6 +168,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const config = {
       openAiApiKey: openaiKeyInput.value.trim(),
       notionApiKey: notionKeyInput.value.trim(),
+      googleDriveClientId: googleDriveClientIdInput.value.trim(),
       defaultDriveParent: driveParentInput.value.trim(),
       facebookPageUrl: facebookPageUrlInput.value.trim(),
       facebookMediaParent: facebookMediaParentInput.value.trim(),
@@ -184,6 +191,57 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       console.error("Lỗi lưu config:", err);
       throw err;
+    }
+  }
+
+  async function refreshGoogleDriveStatus() {
+    try {
+      const response = await fetch("/api/google-drive/status");
+      const status = await response.json();
+      if (status.connected) {
+        googleDriveStatus.textContent = "Đã kết nối";
+      } else if (status.configured) {
+        googleDriveStatus.textContent = "Chưa cấp quyền";
+      } else {
+        googleDriveStatus.textContent = "Chưa nhập Client ID";
+      }
+    } catch {
+      googleDriveStatus.textContent = "Không kiểm tra được";
+    }
+  }
+
+  async function connectGoogleDrive() {
+    const clientId = googleDriveClientIdInput.value.trim();
+    if (!clientId.endsWith(".apps.googleusercontent.com")) {
+      alert("Hãy nhập Google Drive OAuth Client ID dạng ...apps.googleusercontent.com.");
+      return;
+    }
+    btnConnectGoogleDrive.disabled = true;
+    try {
+      await saveConfig();
+      const response = await fetch("/api/google-drive/start-auth", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Không thể bắt đầu kết nối Google Drive.");
+
+      const popup = window.open(data.authUrl, "google-drive-oauth", "width=620,height=760");
+      if (!popup) throw new Error("Trình duyệt đã chặn cửa sổ đăng nhập Google. Hãy cho phép popup rồi thử lại.");
+      googleDriveStatus.textContent = "Đang chờ cấp quyền…";
+      appendLocalLog("Đã mở cửa sổ đăng nhập để kết nối Google Drive.", "info");
+
+      const timer = window.setInterval(async () => {
+        await refreshGoogleDriveStatus();
+        if (googleDriveStatus.textContent === "Đã kết nối") {
+          window.clearInterval(timer);
+          appendLocalLog("Google Drive đã sẵn sàng tìm đúng thư mục sản phẩm từ link thư mục cha.", "success");
+        }
+      }, 1500);
+      window.setTimeout(() => window.clearInterval(timer), 5 * 60 * 1000);
+    } catch (err) {
+      googleDriveStatus.textContent = "Kết nối thất bại";
+      appendLocalLog(`Kết nối Google Drive thất bại: ${err.message}`, "error");
+      alert(err.message);
+    } finally {
+      btnConnectGoogleDrive.disabled = false;
     }
   }
 
@@ -448,6 +506,8 @@ document.addEventListener("DOMContentLoaded", () => {
     btnToggleNotionKey.setAttribute("aria-label", isHidden ? "Ẩn Notion Access Token" : "Hiện Notion Access Token");
   });
 
+  btnConnectGoogleDrive.addEventListener("click", connectGoogleDrive);
+
   // Image upload click/drop
   imageDropzone.addEventListener("click", () => refImageInput.click());
   refImageInput.addEventListener("change", (e) => {
@@ -556,6 +616,45 @@ document.addEventListener("DOMContentLoaded", () => {
       currentLogsLength = 0;
     } catch (err) {
       console.error(err);
+    }
+  });
+
+  btnClearProductCache.addEventListener("click", async () => {
+    const confirmed = window.confirm("Xóa dữ liệu của sản phẩm đang làm để bắt đầu sản phẩm mới? API key, Notion token, Google Drive OAuth và 4 prompt vẫn được giữ lại.");
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch("/api/app/clear-product-cache", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Không thể xóa cache sản phẩm.");
+
+      prodNameInput.value = "";
+      prodCategoryInput.value = "Trị mụn";
+      prodPriceInput.value = "350.000";
+      prodDetailsInput.value = "";
+      articleContentTextarea.value = "";
+      productDriveUrlInput.value = "";
+      currentProductDriveUrl = "";
+      referenceImageBase64 = null;
+      refImageInput.value = "";
+      imgPreview.src = "";
+      previewContainer.style.display = "none";
+      dropzoneText.style.display = "flex";
+      facebookProduct = null;
+      facebookContentInput.value = "";
+      facebookProductInfo.textContent = "Chưa tải dữ liệu sản phẩm.";
+      logBox.innerHTML = "";
+      if (facebookLogBox) facebookLogBox.innerHTML = "";
+      currentLogsLength = 0;
+      updateTargetFolderDisplay();
+      appendLocalLog("Đã xóa cache sản phẩm. Có thể bắt đầu sản phẩm mới.", "success");
+      showCompletionPopup({
+        title: "Đã xóa cache sản phẩm",
+        message: "Dữ liệu sản phẩm hiện tại đã được làm mới. API key, Notion token, Google Drive OAuth và prompt vẫn được giữ lại."
+      });
+    } catch (err) {
+      appendLocalLog(`Xóa cache sản phẩm thất bại: ${err.message}`, "error");
+      alert(err.message);
     }
   });
 

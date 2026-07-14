@@ -55,6 +55,14 @@
                 <label for="notion-key">Notion Access Token</label>
                 <div class="input-with-button"><input type="password" id="notion-key" placeholder="ntn_..."><button id="btn-toggle-notion-key" type="button" class="btn secondary" aria-label="Hiện Notion Access Token" aria-pressed="false">Hiện</button></div>
               </div>
+              <div class="key-field">
+                <label for="google-drive-client-id">Google Drive OAuth Client ID</label>
+                <input type="text" id="google-drive-client-id" placeholder="xxxxx.apps.googleusercontent.com" autocomplete="off">
+                <div class="input-with-button mt-2 google-drive-auth-row">
+                  <button id="btn-connect-google-drive" type="button" class="btn secondary">Kết nối Google Drive</button>
+                  <span id="google-drive-status" class="desc-text" aria-live="polite">Chưa kết nối</span>
+                </div>
+              </div>
               <button id="btn-save-key" class="btn primary w-full">💾 Lưu API Keys trên máy này</button>
             </div>
             <div class="form-group">
@@ -73,6 +81,8 @@
               <input type="url" id="product-drive-url" placeholder="Dán link thư mục cha chứa các thư mục sản phẩm">
               <p class="desc-text">Tool tìm thư mục con theo tên sản phẩm trên máy và lấy đúng link media của thư mục con. Không dùng link <code>local_unsynced</code>.</p>
             </div>
+            <button id="btn-clear-product-cache" type="button" class="btn secondary w-full">🧹 Xóa cache sản phẩm hiện tại</button>
+            <p class="desc-text">Chỉ xóa dữ liệu sản phẩm và log đang làm; giữ API key, token, Google Drive OAuth và 4 prompt.</p>
           </div>
         </div>
 
