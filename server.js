@@ -953,7 +953,7 @@ app.get("/api/facebook/pending-products", async (req, res) => {
         start_cursor: startCursor,
         filter: {
           property: "Facebook",
-          multi_select: { contains: "Chưa đăng" }
+          select: { equals: "Chưa đăng" }
         }
       });
 
@@ -1024,7 +1024,7 @@ app.post("/api/facebook/publish", async (req, res) => {
     const fileInput = page.locator('input[type="file"][multiple]').last();
     await fileInput.setInputFiles(imagePaths); await page.waitForTimeout(5000);
     const notion = await getNotionClient(); const record = await findCoordinationPageByTitle(notion, productName);
-    if (record) await notion.pages.update({ page_id: record.id, properties: { Facebook: { multi_select: [{ name: "Đã đăng" }] } } });
+    if (record) await notion.pages.update({ page_id: record.id, properties: { Facebook: { select: { name: "Đã đăng" } } } });
     res.json({ success: true, message: "Đã đưa nội dung và hình ảnh vào form Facebook; Notion đã ghi Facebook: Đã đăng." });
   } catch (err) { res.status(500).json({ error: err.message }); }
   finally { if (browser) await browser.close(); }
