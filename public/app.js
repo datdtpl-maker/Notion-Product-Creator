@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnCheckKey = document.getElementById("btn-check-key");
   const driveParentInput = document.getElementById("drive-parent");
   const btnSelectFolder = document.getElementById("btn-select-folder");
+  const productDriveUrlInput = document.getElementById("product-drive-url");
   
   const prodNameInput = document.getElementById("prod-name");
   const prodCategoryInput = document.getElementById("prod-category");
@@ -76,6 +77,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentLogsLength = 0;
   let facebookProduct = null;
   let pendingFacebookProducts = [];
+  let currentProductDriveUrl = "";
 
   // --- Functions ---
 
@@ -599,6 +601,7 @@ document.addEventListener("DOMContentLoaded", () => {
           body: JSON.stringify({
             productName,
             driveParent,
+            driveUrl: productDriveUrlInput.value.trim() || currentProductDriveUrl,
             promptIndex: index,
             promptText,
             details,
@@ -608,6 +611,10 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         const data = await res.json();
         if (res.ok) {
+          if (data.driveUrl) {
+            currentProductDriveUrl = data.driveUrl;
+            productDriveUrlInput.value = data.driveUrl;
+          }
           appendLocalLog(data.message, "success");
           alert(`Đã gửi lệnh sinh ảnh ${index} lên ChatGPT! Trình duyệt đang tự động hóa để tải ảnh về.`);
         } else {
@@ -642,7 +649,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const notionRes = await fetch("/api/notion/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productName, content, driveParent })
+        body: JSON.stringify({ productName, content, driveParent, driveUrl: productDriveUrlInput.value.trim() || currentProductDriveUrl })
       });
       const notionData = await notionRes.json();
       if (!notionRes.ok) {

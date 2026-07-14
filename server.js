@@ -12,13 +12,14 @@ const express = require("express");
 const fs = require("fs").promises;
 const { existsSync } = require("fs");
 const path = require("path");
-const { exec, execSync, spawn } = require("child_process");
+const { exec, execSync, spawn, execFile } = require("child_process");
 const { promisify } = require("util");
 const { Client: NotionClient } = require("@notionhq/client");
 const OpenAI = require("openai");
 const { chromium } = require("playwright");
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 async function launchChromeDebug(port, userDataDir, startUrl) {
   const candidates = process.platform === "darwin"
@@ -626,19 +627,55 @@ app.get("/api/chrome/status", async (req, res) => {
   }
 });
 
-// Helper: Query user.drive.id via PowerShell
+function getGoogleDriveFolderId(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/(?:folders\/|[?&]id=)([A-Za-z0-9_-]{10,})/) || text.match(/^([A-Za-z0-9_-]{20,})$/);
+  return match?.[1] || null;
+}
+
+function toGoogleDriveFolderUrl(driveId) {
+  return `https://drive.google.com/drive/u/0/folders/${driveId}`;
+}
+
+// Resolve the real Drive folder ID from the local Google Drive Desktop metadata.
+// Windows uses an alternate data stream; macOS uses Google Drive File Provider xattrs.
 async function getDriveFolderId(folderPath) {
+  if (process.platform === "darwin") {
+    const attributes = [
+      "com.google.drivefs.item-id",
+      "com.google.drivefs.file-id",
+      "com.google.drivefs.metadata"
+    ];
+    for (const attribute of attributes) {
+      try {
+        const { stdout } = await execFileAsync("xattr", ["-p", attribute, folderPath]);
+        const driveId = getGoogleDriveFolderId(stdout);
+        if (driveId) return driveId;
+      } catch {
+        // Try the next Drive File Provider metadata attribute.
+      }
+    }
+    return null;
+  }
+
   try {
     const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -Path '${folderPath}' -Stream 'user.drive.id'"`;
     const { stdout } = await execAsync(cmd);
-    const driveId = stdout.trim();
-    if (driveId && !driveId.startsWith("local")) {
-      return driveId;
-    }
+    const driveId = getGoogleDriveFolderId(stdout);
+    if (driveId) return driveId;
   } catch (err) {
     // Ignore error
   }
   return null;
+}
+
+async function resolveDriveFolderUrl(folderPath, suppliedUrl) {
+  const suppliedId = getGoogleDriveFolderId(suppliedUrl);
+  if (suppliedUrl && !suppliedId) {
+    throw new Error("Link Google Drive không hợp lệ. Hãy dán link thư mục có dạng drive.google.com/drive/u/0/folders/<ID>.");
+  }
+  const driveId = suppliedId || await getDriveFolderId(folderPath);
+  return driveId ? toGoogleDriveFolderUrl(driveId) : null;
 }
 
 // Helper: Query coordination page by title
@@ -661,7 +698,7 @@ async function findCoordinationPageByTitle(notion, productName) {
 
 // Generate single image on-demand using Playwright
 app.post("/api/chrome/generate-single-image", async (req, res) => {
-  const { productName, driveParent, promptIndex, promptText, details, content, referenceImage } = req.body;
+  const { productName, driveParent, driveUrl: suppliedDriveUrl, promptIndex, promptText, details, content, referenceImage } = req.body;
   if (!productName) {
     return res.status(400).json({ error: "Thiếu tên sản phẩm." });
   }
@@ -701,18 +738,19 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
 
     // Get Drive ID
     addLog(`[Ảnh ${promptIndex}] Đang lấy Google Drive ID...`, "info");
-    let driveId = await getDriveFolderId(targetFolder);
-    if (!driveId) {
-      driveId = "local_unsynced_" + Date.now();
+    const driveUrl = await resolveDriveFolderUrl(targetFolder, suppliedDriveUrl);
+    if (!driveUrl) {
+      addLog(`[Ảnh ${promptIndex}] Không đọc được Google Drive ID trên máy này. Ảnh vẫn được lưu local; hãy dán link thư mục Drive thật trước khi đẩy bài lên Notion.`, "warning");
     }
-    const driveUrl = `https://drive.google.com/drive/folders/${driveId}`;
 
     // Start background single image automation
     runSingleImageAutomationInBackground(port, refImagePath, promptText, promptIndex, targetFolder, productName, driveUrl, details, content);
 
     res.json({
       success: true,
-      message: `Đã khởi chạy tiến trình sinh ảnh ${promptIndex} trong nền.`,
+      message: driveUrl
+        ? `Đã khởi chạy tiến trình sinh ảnh ${promptIndex} trong nền.`
+        : `Đã khởi chạy sinh ảnh ${promptIndex}. Chưa có link Drive thật; hãy dán link thư mục sản phẩm trước khi đẩy Notion.`,
       driveUrl
     });
   } catch (err) {
@@ -863,6 +901,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, promptTe
       try {
         const coordinationDbId = "9788b8a0-31cc-42d3-91be-4e26d6b8c8e8";
         const notion = await getNotionClient();
+        const mediaProperty = driveUrl ? { "Media sản phẩm": { url: driveUrl } } : {};
         
         const existingPage = await findCoordinationPageByTitle(notion, productName);
         if (existingPage) {
@@ -870,9 +909,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, promptTe
           await notion.pages.update({
             page_id: existingPage.id,
             properties: {
-              "Media sản phẩm": {
-                url: driveUrl
-              },
+              ...mediaProperty,
               "Trạng thái": {
                 select: {
                   name: "Content đang làm"
@@ -895,9 +932,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, promptTe
                   }
                 ]
               },
-              "Media sản phẩm": {
-                url: driveUrl
-              },
+              ...mediaProperty,
               "Trạng thái": {
                 select: {
                   name: "Content đang làm"
@@ -1092,14 +1127,10 @@ app.post("/api/notion/sync", async (req, res) => {
     if (!finalDriveUrl && driveParent) {
       addLog(`Đang lấy Google Drive ID để đồng bộ liên kết...`, "info");
       const targetFolder = path.join(driveParent, productName.replace(/[\\/:*?"<>|]/g, ""));
-      let driveId = await getDriveFolderId(targetFolder);
-      if (!driveId) {
-        driveId = "local_unsynced_" + Date.now();
-      }
-      finalDriveUrl = `https://drive.google.com/drive/folders/${driveId}`;
+      finalDriveUrl = await resolveDriveFolderUrl(targetFolder, null);
     }
     if (!finalDriveUrl) {
-      finalDriveUrl = "https://drive.google.com";
+      throw new Error("Không đọc được Google Drive ID từ thư mục đã chọn. Hãy dán link Google Drive thật của thư mục sản phẩm vào ô Link Google Drive trước khi đẩy Notion.");
     }
 
     // 1. Create page in "Công việc của Tây" database containing the Markdown blocks
