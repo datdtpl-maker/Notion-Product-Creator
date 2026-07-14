@@ -1,0 +1,11 @@
+{
+  "openAiApiKey": "",
+  "notionApiKey": "",
+  "defaultDriveParent": "",
+  "facebookPageUrl": "",
+  "facebookMediaParent": "",
+  "facebookTemplate": "",
+  "chromeDebugPort": 9222,
+  "facebookDebugPort": 9223,
+  "prompts": []
+}

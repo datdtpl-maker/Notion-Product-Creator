@@ -1,0 +1,7 @@
+node_modules/
+dist-electron/
+.codegraph/
+config.json
+*.log
+chatgpt_profile/
+facebook_profile/
