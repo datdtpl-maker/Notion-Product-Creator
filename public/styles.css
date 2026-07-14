@@ -814,3 +814,13 @@ body.light-mode .modal-footer {
   font-size: 13.5px;
   line-height: 1.5;
 }
+
+.completion-modal[hidden] { display: none; }
+.completion-modal { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, 0.52); backdrop-filter: blur(7px); }
+.completion-card { width: min(420px, 100%); padding: 32px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 22px; background: var(--surface); box-shadow: 0 28px 72px rgba(15, 23, 42, 0.32); animation: completion-pop 0.22s ease-out; }
+.completion-icon { display: grid; place-items: center; width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 50%; color: #fff; background: linear-gradient(135deg, #10b981, #06b6d4); box-shadow: 0 10px 24px rgba(16, 185, 129, 0.32); font-size: 32px; font-weight: 800; }
+.completion-card h3 { margin: 0; color: var(--text); font-size: 21px; }
+.completion-card p { margin: 10px 0 24px; color: var(--text-muted); line-height: 1.55; }
+.completion-actions { display: flex; justify-content: center; gap: 10px; }
+.completion-actions .btn { min-width: 120px; text-decoration: none; }
+@keyframes completion-pop { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }

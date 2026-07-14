@@ -66,6 +66,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const facebookContentInput = document.getElementById("facebook-content");
   const facebookProductInfo = document.getElementById("facebook-product-info");
   const facebookLogBox = document.getElementById("facebook-log-box");
+  const completionModal = document.getElementById("completion-modal");
+  const completionTitle = document.getElementById("completion-title");
+  const completionMessage = document.getElementById("completion-message");
+  const completionNotionLink = document.getElementById("completion-notion-link");
+  const btnCloseCompletion = document.getElementById("btn-close-completion");
 
   let referenceImageBase64 = null;
   let currentLogsLength = 0;
@@ -73,6 +78,30 @@ document.addEventListener("DOMContentLoaded", () => {
   let pendingFacebookProducts = [];
 
   // --- Functions ---
+
+  function closeCompletionPopup() {
+    completionModal.hidden = true;
+  }
+
+  function showCompletionPopup({ title, message, notionUrl, notionLabel = "Mở trên Notion" }) {
+    completionTitle.textContent = title;
+    completionMessage.textContent = message;
+    completionNotionLink.hidden = !notionUrl;
+    if (notionUrl) {
+      completionNotionLink.href = notionUrl;
+      completionNotionLink.textContent = notionLabel;
+    }
+    completionModal.hidden = false;
+    btnCloseCompletion.focus();
+  }
+
+  btnCloseCompletion.addEventListener("click", closeCompletionPopup);
+  completionModal.addEventListener("click", (event) => {
+    if (event.target === completionModal) closeCompletionPopup();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !completionModal.hidden) closeCompletionPopup();
+  });
 
   // Dynamically calculate and display the auto-save subfolder path
   function updateTargetFolderDisplay() {
@@ -622,7 +651,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       appendLocalLog("Đồng bộ bài viết lên Notion thành công!", "success");
       appendLocalLog("============== HOÀN THÀNH QUY TRÌNH NOTION ==============", "success");
-      alert("Đồng bộ Notion thành công! Bài viết đã chuyển sang trạng thái 'Báo IT đăng' và được tích vào 'Content xong'.");
+      showCompletionPopup({
+        title: "Đã đẩy bài Website lên Notion",
+        message: "Bài viết đã được lưu trên Notion và chuyển sang trạng thái sẵn sàng đăng website.",
+        notionUrl: notionData.contentPageUrl,
+        notionLabel: "Mở bài Website trên Notion"
+      });
     } catch (err) {
       appendLocalLog(`Lỗi đồng bộ Notion: ${err.message}`, "error");
       alert(`Đồng bộ thất bại: ${err.message}`);
@@ -723,7 +757,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const data = await res.json();
     if (!res.ok) return alert(data.error || "Không thể đăng Facebook.");
     appendLocalLog(data.message, "success");
-    alert(data.message);
+    showCompletionPopup({
+      title: "Đã lưu bài Facebook",
+      message: "Nội dung AI tạo hoặc bạn chỉnh sửa đã được đưa vào form Facebook, lưu thành bài Facebook trên Notion và cập nhật trạng thái Đã đăng.",
+      notionUrl: data.facebookContentPageUrl,
+      notionLabel: "Mở bài Facebook trên Notion"
+    });
+    await loadPendingFacebookProducts();
   });
 
   // --- Initializations ---

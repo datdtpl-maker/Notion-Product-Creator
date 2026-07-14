@@ -1023,9 +1023,42 @@ app.post("/api/facebook/publish", async (req, res) => {
     await editor.waitFor({ timeout: 15000 }); await editor.click(); await page.keyboard.insertText(content);
     const fileInput = page.locator('input[type="file"][multiple]').last();
     await fileInput.setInputFiles(imagePaths); await page.waitForTimeout(5000);
-    const notion = await getNotionClient(); const record = await findCoordinationPageByTitle(notion, productName);
-    if (record) await notion.pages.update({ page_id: record.id, properties: { Facebook: { select: { name: "Đã đăng" } } } });
-    res.json({ success: true, message: "Đã đưa nội dung và hình ảnh vào form Facebook; Notion đã ghi Facebook: Đã đăng." });
+    const notion = await getNotionClient();
+    const record = await findCoordinationPageByTitle(notion, productName);
+    if (!record) throw new Error("Không tìm thấy trang điều phối sản phẩm để lưu bài Facebook.");
+
+    // Save exactly the content in the editor (including user edits) as a
+    // separate Facebook article page, then link it to the product record.
+    const contentDataSourceId = "22c70655-a9aa-80f5-a0b5-000b9dfd1d8b";
+    const facebookBlocks = markdownToNotionBlocks(content);
+    const facebookContentPage = await notion.pages.create({
+      parent: { data_source_id: contentDataSourceId },
+      properties: {
+        "Tên tài liệu": { title: [{ text: { content: `${productName} FACEBOOK` } }] },
+        "Status": { select: { name: "Hoàn thành" } }
+      },
+      children: facebookBlocks.slice(0, 100)
+    });
+
+    for (let i = 100; i < facebookBlocks.length; i += 100) {
+      await notion.blocks.children.append({ block_id: facebookContentPage.id, children: facebookBlocks.slice(i, i + 100) });
+    }
+
+    const currentRelations = record.properties["Bài content Tây"]?.relation || [];
+    const relatedContent = [...currentRelations, { id: facebookContentPage.id }]
+      .filter((relation, index, list) => list.findIndex((item) => item.id === relation.id) === index);
+    await notion.pages.update({
+      page_id: record.id,
+      properties: {
+        "Bài content Tây": { relation: relatedContent },
+        Facebook: { select: { name: "Đã đăng" } }
+      }
+    });
+    res.json({
+      success: true,
+      facebookContentPageUrl: facebookContentPage.url,
+      message: "Đã đưa nội dung và ảnh vào form Facebook, đồng thời lưu bài Facebook vào Notion."
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
   finally { if (browser) await browser.close(); }
 });
