@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Elements
   const openaiKeyInput = document.getElementById("openai-key");
   const notionKeyInput = document.getElementById("notion-key");
+  const btnToggleNotionKey = document.getElementById("btn-toggle-notion-key");
   const btnCheckKey = document.getElementById("btn-check-key");
   const driveParentInput = document.getElementById("drive-parent");
   const btnSelectFolder = document.getElementById("btn-select-folder");
@@ -391,21 +392,30 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnSaveKey) {
     btnSaveKey.addEventListener("click", async () => {
       const apiKey = openaiKeyInput.value.trim();
-      if (!apiKey) {
-        alert("Vui lòng nhập OpenAI API Key trước khi lưu.");
+      const notionApiKey = notionKeyInput.value.trim();
+      if (!apiKey && !notionApiKey) {
+        alert("Vui lòng nhập OpenAI API Key hoặc Notion Access Token trước khi lưu.");
         return;
       }
-      appendLocalLog("Đang lưu OpenAI API Key...", "info");
+      appendLocalLog("Đang lưu API Keys trên máy này...", "info");
       try {
         await saveConfig();
-        appendLocalLog("Đã lưu OpenAI API Key thành công!", "success");
-        alert("Đã lưu OpenAI API Key thành công!");
+        appendLocalLog("Đã lưu OpenAI API Key và Notion Access Token thành công!", "success");
+        alert("Đã lưu API Keys thành công trên máy này!");
       } catch (err) {
-        appendLocalLog(`Không thể lưu OpenAI API Key: ${err.message}`, "error");
-        alert(`Không thể lưu OpenAI API Key: ${err.message}`);
+        appendLocalLog(`Không thể lưu API Keys: ${err.message}`, "error");
+        alert(`Không thể lưu API Keys: ${err.message}`);
       }
     });
   }
+
+  btnToggleNotionKey.addEventListener("click", () => {
+    const isHidden = notionKeyInput.type === "password";
+    notionKeyInput.type = isHidden ? "text" : "password";
+    btnToggleNotionKey.textContent = isHidden ? "Ẩn" : "Hiện";
+    btnToggleNotionKey.setAttribute("aria-pressed", String(isHidden));
+    btnToggleNotionKey.setAttribute("aria-label", isHidden ? "Ẩn Notion Access Token" : "Hiện Notion Access Token");
+  });
 
   // Image upload click/drop
   imageDropzone.addEventListener("click", () => refImageInput.click());

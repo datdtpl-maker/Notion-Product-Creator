@@ -283,6 +283,10 @@ body.light-mode .card-footer {
   margin-bottom: 16px;
 }
 
+.api-credentials { display:grid; gap:12px; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--surface-border); }
+.key-field label { margin-bottom:6px; }
+.key-field .input-with-button .btn { flex:0 0 auto; white-space:nowrap; }
+
 .form-row {
   display: flex;
   gap: 12px;

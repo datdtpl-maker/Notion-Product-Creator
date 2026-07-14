@@ -46,18 +46,16 @@
             <h3>⚙️ Cấu hình hệ thống</h3>
           </div>
           <div class="card-body">
-            <div class="form-group">
-              <label for="openai-key">OpenAI API Key</label>
-              <div class="input-with-button">
-                <input type="password" id="openai-key" placeholder="sk-proj-...">
-                <button id="btn-check-key" class="btn secondary">Kiểm tra</button>
-                <button id="btn-save-key" class="btn primary">💾 Lưu Key</button>
+            <div class="api-credentials">
+              <div class="key-field">
+                <label for="openai-key">OpenAI API Key</label>
+                <div class="input-with-button"><input type="password" id="openai-key" placeholder="sk-proj-..."><button id="btn-check-key" class="btn secondary">Kiểm tra</button></div>
               </div>
-            </div>
-            <div class="form-group">
-              <label for="notion-key">Notion API Key</label>
-              <input type="password" id="notion-key" placeholder="ntn_...">
-              <p class="desc-text">Lưu cục bộ trên máy này, không đi kèm source hoặc bản phát hành.</p>
+              <div class="key-field">
+                <label for="notion-key">Notion Access Token</label>
+                <div class="input-with-button"><input type="password" id="notion-key" placeholder="ntn_..."><button id="btn-toggle-notion-key" type="button" class="btn secondary" aria-label="Hiện Notion Access Token" aria-pressed="false">Hiện</button></div>
+              </div>
+              <button id="btn-save-key" class="btn primary w-full">💾 Lưu API Keys trên máy này</button>
             </div>
             <div class="form-group">
               <label for="drive-parent">Thư mục gốc sản phẩm & ảnh</label>
