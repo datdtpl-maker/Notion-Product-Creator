@@ -37,8 +37,7 @@
       "icon": "public/favicon.ico"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "public/favicon.ico"
+      "target": "dmg"
     },
     "nsis": {
       "oneClick": false,
