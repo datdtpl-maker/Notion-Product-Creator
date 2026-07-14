@@ -41,8 +41,11 @@ async function launchChromeDebug(port, userDataDir, startUrl) {
 const isPkg = typeof process.pkg !== "undefined";
 const appDir = isPkg ? path.dirname(process.execPath) : __dirname;
 const isElectron = Boolean(process.versions.electron);
+const userConfigBaseDir = process.platform === "darwin"
+  ? path.join(process.env.HOME || appDir, "Library", "Application Support")
+  : (process.env.APPDATA || path.join(process.env.HOME || appDir, ".config"));
 const configDir = isElectron
-  ? path.join(process.env.APPDATA || appDir, "NotionProductCreator")
+  ? path.join(userConfigBaseDir, "NotionProductCreator")
   : appDir;
 
 const app = express();
