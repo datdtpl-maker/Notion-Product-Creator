@@ -1131,12 +1131,13 @@ app.post("/api/notion/sync", async (req, res) => {
     const finalKeywords = await generateSeoKeywords(config.openAiApiKey, productName, content);
     addLog(`Đã tạo từ khóa SEO: "${finalKeywords}"`, "success");
 
-    // Try to resolve Google Drive folder URL if not passed explicitly
-    let finalDriveUrl = driveUrl;
-    if (!finalDriveUrl && driveParent) {
-      addLog(`Đang lấy Google Drive ID để đồng bộ liên kết...`, "info");
+    // Always resolve the product child folder. The optional URL in the form is
+    // the parent folder only and must never be written into Media sản phẩm.
+    let finalDriveUrl = null;
+    if (driveParent) {
+      addLog(`Đang lấy Google Drive ID của thư mục sản phẩm để đồng bộ liên kết...`, "info");
       const targetFolder = path.join(driveParent, productName.replace(/[\\/:*?"<>|]/g, ""));
-      finalDriveUrl = await resolveDriveFolderUrl(targetFolder, null);
+      finalDriveUrl = await resolveDriveFolderUrl(targetFolder, driveUrl);
     }
     if (!finalDriveUrl) {
       throw new Error("Không đọc được Google Drive ID của thư mục sản phẩm. Hãy kiểm tra thư mục con đã đồng bộ xong trong Google Drive Desktop; link thư mục cha không thể thay thế ID thư mục con khi metadata local bị thiếu.");
