@@ -115,11 +115,19 @@ async function generateSeoKeywords(apiKey, productName, content) {
   const openai = new OpenAI({ apiKey });
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
-    temperature: 0.9,
+    temperature: 0.2,
     messages: [
       {
         role: "system",
-        content: "Bạn là chuyên gia SEO dược mỹ phẩm. Chỉ trả về 2 hoặc 3 từ khóa SEO tiếng Việt ngắn, ngăn cách bằng dấu phẩy. Từ khóa phải liên quan trực tiếp đến tên sản phẩm và công dụng được cung cấp. Không đánh số, không giải thích, không dùng hashtag, không bịa công dụng."
+        content: `Bạn là chuyên gia SEO dược mỹ phẩm. Trả về CHÍNH XÁC 3 từ khóa SEO ngắn, ngăn cách duy nhất bằng dấu phẩy, không đánh số, không hashtag, không giải thích.
+
+Quy tắc bắt buộc theo đúng thứ tự:
+1. Từ khóa 1: tên/brand ngắn nhận diện nhất, lấy trực tiếp từ đầu tên sản phẩm; không dùng cụm chung chung như "gel trị mụn".
+2. Từ khóa 2: hoạt chất chính có nồng độ nếu có trong tên hoặc nội dung.
+3. Từ khóa 3: một công dụng/tình trạng chính, ngắn gọn và đúng dữ liệu.
+
+Ví dụ: "Drogsan Oximin Clindamycin 1% + Benzoyl Peroxide 5% – Gel Điều Trị Mụn Viêm, Mụn Mủ, Mụn Trứng Cá" phải trả về đúng dạng: "Drogsan Oximin, Clindamycin 1%, Mụn viêm".
+Không trả từ khóa quá rộng như "trị mụn, ngăn ngừa tái phát, giảm sưng viêm".`
       },
       {
         role: "user",
@@ -669,12 +677,13 @@ async function getDriveFolderId(folderPath) {
   return null;
 }
 
-async function resolveDriveFolderUrl(folderPath, suppliedUrl) {
-  const suppliedId = getGoogleDriveFolderId(suppliedUrl);
-  if (suppliedUrl && !suppliedId) {
-    throw new Error("Link Google Drive không hợp lệ. Hãy dán link thư mục có dạng drive.google.com/drive/u/0/folders/<ID>.");
+async function resolveDriveFolderUrl(folderPath, suppliedParentUrl) {
+  if (suppliedParentUrl && !getGoogleDriveFolderId(suppliedParentUrl)) {
+    throw new Error("Link Google Drive thư mục cha không hợp lệ. Hãy dán link có dạng drive.google.com/drive/u/0/folders/<ID>.");
   }
-  const driveId = suppliedId || await getDriveFolderId(folderPath);
+  // The local product folder is the source of truth. Its Drive File Provider
+  // metadata maps to the child folder's real remote ID, not the parent's ID.
+  const driveId = await getDriveFolderId(folderPath);
   return driveId ? toGoogleDriveFolderUrl(driveId) : null;
 }
 
@@ -1130,7 +1139,7 @@ app.post("/api/notion/sync", async (req, res) => {
       finalDriveUrl = await resolveDriveFolderUrl(targetFolder, null);
     }
     if (!finalDriveUrl) {
-      throw new Error("Không đọc được Google Drive ID từ thư mục đã chọn. Hãy dán link Google Drive thật của thư mục sản phẩm vào ô Link Google Drive trước khi đẩy Notion.");
+      throw new Error("Không đọc được Google Drive ID của thư mục sản phẩm. Hãy kiểm tra thư mục con đã đồng bộ xong trong Google Drive Desktop; link thư mục cha không thể thay thế ID thư mục con khi metadata local bị thiếu.");
     }
 
     // 1. Create page in "Công việc của Tây" database containing the Markdown blocks

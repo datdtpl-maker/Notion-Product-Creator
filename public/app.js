@@ -613,7 +613,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (res.ok) {
           if (data.driveUrl) {
             currentProductDriveUrl = data.driveUrl;
-            productDriveUrlInput.value = data.driveUrl;
           }
           appendLocalLog(data.message, "success");
           alert(`Đã gửi lệnh sinh ảnh ${index} lên ChatGPT! Trình duyệt đang tự động hóa để tải ảnh về.`);
