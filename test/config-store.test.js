@@ -62,3 +62,29 @@ test("redacts credentials returned to the renderer", () => {
   assert.equal(safe.notionApiKeyConfigured, true);
   assert.equal(safe.googleDriveParentUrl, "https://drive.test/parent");
 });
+
+test("migrates a plaintext legacy config and removes the legacy file", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "notion-product-creator-legacy-"));
+  const configPath = path.join(directory, "config.json");
+  const legacyConfigPath = path.join(directory, "legacy", "config.json");
+  await fs.mkdir(path.dirname(legacyConfigPath), { recursive: true });
+  await fs.writeFile(legacyConfigPath, JSON.stringify({ openAiApiKey: "sk-legacy", googleDriveParentUrl: "parent" }));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+
+  const prefix = "encrypted:";
+  const store = createConfigStore({
+    configPath,
+    legacyConfigPath,
+    defaults: { openAiApiKey: "", googleDriveParentUrl: "" },
+    secretFields: ["openAiApiKey"],
+    encryptSecret: (value) => `${prefix}${Buffer.from(value).toString("base64")}`,
+    decryptSecret: (value) => value.startsWith(prefix)
+      ? Buffer.from(value.slice(prefix.length), "base64").toString("utf8")
+      : value
+  });
+
+  await store.update((config) => config);
+  assert.equal(await fs.stat(legacyConfigPath).then(() => true, () => false), false);
+  assert.doesNotMatch(await fs.readFile(configPath, "utf8"), /sk-legacy/);
+  assert.equal((await store.load()).openAiApiKey, "sk-legacy");
+});

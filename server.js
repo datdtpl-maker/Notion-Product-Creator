@@ -47,9 +47,9 @@ const isElectron = Boolean(process.versions.electron);
 const userConfigBaseDir = process.platform === "darwin"
   ? path.join(process.env.HOME || appDir, "Library", "Application Support")
   : (process.env.APPDATA || path.join(process.env.HOME || appDir, ".config"));
-const configDir = isElectron
+const configDir = process.env.NPC_CONFIG_DIR || (isElectron
   ? path.join(userConfigBaseDir, "NotionProductCreator")
-  : appDir;
+  : appDir);
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -94,7 +94,11 @@ function getElectronSafeStorage() {
 
 function encryptConfigSecret(value) {
   const safeStorage = getElectronSafeStorage();
-  if (!safeStorage || !value) return value;
+  if (!value) return value;
+  if (!safeStorage) {
+    if (!isElectron) return value;
+    throw new Error("Không thể truy cập vùng lưu trữ bảo mật của hệ điều hành. Secret chưa được lưu để tránh ghi plaintext.");
+  }
   return `${SAFE_STORAGE_PREFIX}${safeStorage.encryptString(value).toString("base64")}`;
 }
 
@@ -421,10 +425,12 @@ app.post("/api/logs/clear", (req, res) => {
 // Load configuration
 app.get("/api/config", async (req, res) => {
   try {
-    const config = await loadConfig();
+    let config;
     if (!configSecurityMigrated && getElectronSafeStorage()) {
-      await saveConfig(config);
+      config = await updateConfig((current) => current);
       configSecurityMigrated = true;
+    } else {
+      config = await loadConfig();
     }
     res.json(redactConfig(config));
   } catch (err) {
