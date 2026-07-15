@@ -12,7 +12,9 @@ function createWindow() {
     icon: path.join(__dirname, "public", "favicon.ico"),
     webPreferences: {
       nodeIntegration: false,
-      contextBridge: true
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true
     }
   });
 
@@ -20,7 +22,7 @@ function createWindow() {
   win.setMenuBarVisibility(false);
 
   // Load URL của Express Server chạy tại cổng 3000
-  win.loadURL("http://localhost:3000");
+  win.loadURL("http://127.0.0.1:3000");
 
   win.on("closed", () => {
     app.quit();

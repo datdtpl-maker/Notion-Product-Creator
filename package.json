@@ -1,14 +1,15 @@
 {
   "name": "notion-product-creator",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "App tự động hóa viết bài sản phẩm, tạo ảnh ChatGPT và cập nhật Notion",
   "main": "main.js",
   "bin": "server.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
+    "test": "node --test test/*.test.js",
     "electron-build": "electron-builder build --win --x64",
-    "electron-build-mac": "electron-builder build --mac dmg"
+    "electron-build-mac": "electron-builder build --mac dmg --universal"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.0",
@@ -22,6 +23,7 @@
     ]
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "electron": "^43.1.0",
     "electron-builder": "^26.15.3"
   },
@@ -37,8 +39,11 @@
       "icon": "public/favicon.ico"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
     },
+    "afterSign": "scripts/notarize.js",
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -47,6 +52,7 @@
     "files": [
       "main.js",
       "server.js",
+      "lib/**/*",
       "public/**/*",
       "package.json",
       "node_modules/**/*"

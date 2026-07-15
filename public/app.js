@@ -85,8 +85,11 @@ document.addEventListener("DOMContentLoaded", () => {
   let facebookProduct = null;
   let pendingFacebookProducts = [];
   let currentProductDriveUrl = "";
+  let openAiApiKeyConfigured = false;
+  let notionApiKeyConfigured = false;
   let googleDriveClientSecretConfigured = false;
   let productDriveUrlSaveTimer = null;
+  let lastSavedGoogleDriveParentUrl = "";
 
   // --- Functions ---
 
@@ -135,9 +138,14 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const res = await fetch("/api/config");
       const config = await res.json();
+      if (!res.ok) throw new Error(config.error || "Không thể tải cấu hình.");
       
-      openaiKeyInput.value = config.openAiApiKey || "";
-      notionKeyInput.value = config.notionApiKey || "";
+      openAiApiKeyConfigured = Boolean(config.openAiApiKeyConfigured);
+      notionApiKeyConfigured = Boolean(config.notionApiKeyConfigured);
+      openaiKeyInput.value = "";
+      notionKeyInput.value = "";
+      openaiKeyInput.placeholder = openAiApiKeyConfigured ? "Đã lưu an toàn — nhập mới để thay đổi" : "Nhập OpenAI API Key";
+      notionKeyInput.placeholder = notionApiKeyConfigured ? "Đã lưu an toàn — nhập mới để thay đổi" : "Nhập Notion Access Token";
       googleDriveClientIdInput.value = config.googleDriveClientId || "";
       googleDriveClientSecretConfigured = Boolean(config.googleDriveClientSecretConfigured);
       googleDriveClientSecretInput.value = "";
@@ -146,6 +154,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : "Nhập Client Secret";
       driveParentInput.value = config.defaultDriveParent || "";
       productDriveUrlInput.value = config.googleDriveParentUrl || "";
+      lastSavedGoogleDriveParentUrl = productDriveUrlInput.value.trim();
       facebookPageUrlInput.value = config.facebookPageUrl || "";
       facebookMediaParentInput.value = config.facebookMediaParent || config.defaultDriveParent || "";
       facebookTemplateInput.value = config.facebookTemplate || "";
@@ -203,7 +212,18 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(result.error || "Không thể lưu cấu hình.");
       }
       const result = await response.json();
+      openAiApiKeyConfigured = Boolean(result.config?.openAiApiKeyConfigured);
+      notionApiKeyConfigured = Boolean(result.config?.notionApiKeyConfigured);
       googleDriveClientSecretConfigured = Boolean(result.config?.googleDriveClientSecretConfigured);
+      lastSavedGoogleDriveParentUrl = productDriveUrlInput.value.trim();
+      if (config.openAiApiKey) {
+        openaiKeyInput.value = "";
+        openaiKeyInput.placeholder = "Đã lưu an toàn — nhập mới để thay đổi";
+      }
+      if (config.notionApiKey) {
+        notionKeyInput.value = "";
+        notionKeyInput.placeholder = "Đã lưu an toàn — nhập mới để thay đổi";
+      }
       if (clientSecret) {
         googleDriveClientSecretInput.value = "";
         googleDriveClientSecretInput.placeholder = "Đã lưu — nhập mới để thay đổi";
@@ -212,6 +232,21 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Lỗi lưu config:", err);
       throw err;
     }
+  }
+
+  async function persistGoogleDriveParentUrl({ silent = false } = {}) {
+    clearTimeout(productDriveUrlSaveTimer);
+    const googleDriveParentUrl = productDriveUrlInput.value.trim();
+    if (googleDriveParentUrl === lastSavedGoogleDriveParentUrl) return;
+    const response = await fetch("/api/config/google-drive-parent", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ googleDriveParentUrl })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Không thể lưu link thư mục cha.");
+    lastSavedGoogleDriveParentUrl = googleDriveParentUrl;
+    if (!silent) appendLocalLog("Đã tự động lưu link Google Drive thư mục cha trên máy này.", "success");
   }
 
   async function refreshGoogleDriveStatus() {
@@ -504,7 +539,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Check OpenAI Key
   btnCheckKey.addEventListener("click", async () => {
     const apiKey = openaiKeyInput.value.trim();
-    if (!apiKey) {
+    if (!apiKey && !openAiApiKeyConfigured) {
       alert("Vui lòng nhập OpenAI API Key trước.");
       return;
     }
@@ -520,7 +555,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (res.ok) {
         appendLocalLog(data.message, "success");
         alert(data.message);
-        await saveConfig();
+        if (apiKey) await saveConfig();
       } else {
         throw new Error(data.error);
       }
@@ -537,7 +572,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnSaveKey.addEventListener("click", async () => {
       const apiKey = openaiKeyInput.value.trim();
       const notionApiKey = notionKeyInput.value.trim();
-      if (!apiKey && !notionApiKey) {
+      if (!apiKey && !notionApiKey && !openAiApiKeyConfigured && !notionApiKeyConfigured) {
         alert("Vui lòng nhập OpenAI API Key hoặc Notion Access Token trước khi lưu.");
         return;
       }
@@ -557,12 +592,21 @@ document.addEventListener("DOMContentLoaded", () => {
     clearTimeout(productDriveUrlSaveTimer);
     productDriveUrlSaveTimer = setTimeout(async () => {
       try {
-        await saveConfig();
-        appendLocalLog("Đã tự động lưu link Google Drive thư mục cha trên máy này.", "success");
+        await persistGoogleDriveParentUrl();
       } catch (err) {
         appendLocalLog(`Không thể lưu link thư mục cha: ${err.message}`, "error");
       }
     }, 400);
+  });
+  productDriveUrlInput.addEventListener("change", () => persistGoogleDriveParentUrl().catch((err) => {
+    appendLocalLog(`Không thể lưu link thư mục cha: ${err.message}`, "error");
+  }));
+  productDriveUrlInput.addEventListener("blur", () => persistGoogleDriveParentUrl({ silent: true }).catch(() => {}));
+  window.addEventListener("beforeunload", () => {
+    const googleDriveParentUrl = productDriveUrlInput.value.trim();
+    if (googleDriveParentUrl === lastSavedGoogleDriveParentUrl) return;
+    const payload = new Blob([JSON.stringify({ googleDriveParentUrl })], { type: "application/json" });
+    navigator.sendBeacon("/api/config/google-drive-parent", payload);
   });
 
   btnToggleNotionKey.addEventListener("click", () => {
@@ -938,8 +982,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!res.ok) return alert(data.error || "Không thể đăng Facebook.");
     appendLocalLog(data.message, "success");
     showCompletionPopup({
-      title: "Đã lưu bài Facebook",
-      message: "Nội dung AI tạo hoặc bạn chỉnh sửa đã được đưa vào form Facebook, lưu thành bài Facebook trên Notion và cập nhật trạng thái Đã đăng.",
+      title: "Đã chuẩn bị bài Facebook",
+      message: "Nội dung và ảnh đã được đưa vào form Facebook, lưu trên Notion và chuyển trạng thái thành Chờ đăng. Hãy kiểm tra rồi bấm đăng trên Facebook.",
       notionUrl: data.facebookContentPageUrl,
       notionLabel: "Mở bài Facebook trên Notion"
     });

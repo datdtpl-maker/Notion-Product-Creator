@@ -18,6 +18,7 @@ const { Client: NotionClient } = require("@notionhq/client");
 const OpenAI = require("openai");
 const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
+const { createConfigStore, redactConfig } = require("./lib/config-store");
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -58,10 +59,67 @@ const CONFIG_PATH = path.join(configDir, "config.json");
 const LEGACY_CONFIG_PATH = isElectron
   ? path.join(process.env.APPDATA || appDir, "Programs", "NotionProductCreator", "config.json")
   : null;
+const SAFE_STORAGE_PREFIX = "electron-safe-storage:v1:";
+const SECRET_CONFIG_FIELDS = [
+  "openAiApiKey",
+  "notionApiKey",
+  "googleDriveClientSecret",
+  "googleDriveAccessToken",
+  "googleDriveRefreshToken"
+];
+const CONFIG_DEFAULTS = {
+  openAiApiKey: "",
+  notionApiKey: "",
+  defaultDriveParent: "",
+  googleDriveParentUrl: "",
+  googleDriveClientId: "",
+  googleDriveClientSecret: "",
+  googleDriveAccessToken: "",
+  googleDriveRefreshToken: "",
+  googleDriveTokenExpiry: 0,
+  chromeDebugPort: 9222,
+  chromeUserDataDir: path.join(configDir, "chatgpt_profile"),
+  prompts: []
+};
+
+function getElectronSafeStorage() {
+  if (!isElectron) return null;
+  try {
+    const { safeStorage } = require("electron");
+    return safeStorage.isEncryptionAvailable() ? safeStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function encryptConfigSecret(value) {
+  const safeStorage = getElectronSafeStorage();
+  if (!safeStorage || !value) return value;
+  return `${SAFE_STORAGE_PREFIX}${safeStorage.encryptString(value).toString("base64")}`;
+}
+
+function decryptConfigSecret(value) {
+  if (!value?.startsWith(SAFE_STORAGE_PREFIX)) return value;
+  const safeStorage = getElectronSafeStorage();
+  if (!safeStorage) {
+    throw new Error("Không thể giải mã cấu hình bảo mật trên máy này. Hãy mở ứng dụng Electron bằng đúng tài khoản đã lưu cấu hình.");
+  }
+  return safeStorage.decryptString(Buffer.from(value.slice(SAFE_STORAGE_PREFIX.length), "base64"));
+}
+
+const configStore = createConfigStore({
+  configPath: CONFIG_PATH,
+  legacyConfigPath: LEGACY_CONFIG_PATH,
+  defaults: CONFIG_DEFAULTS,
+  secretFields: SECRET_CONFIG_FIELDS,
+  encryptSecret: encryptConfigSecret,
+  decryptSecret: decryptConfigSecret
+});
 
 // System logs buffer for frontend polling
 let logs = [];
 let pendingGoogleDriveOAuth = null;
+let configSecurityMigrated = false;
 const addLog = (message, type = "info") => {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = { timestamp, message, type };
@@ -232,29 +290,7 @@ async function getCompletedPromptImageIndexes(targetFolder) {
 
 // Helper: load config
 async function loadConfig() {
-  let cfg = {
-    openAiApiKey: "",
-    notionApiKey: "",
-    defaultDriveParent: "",
-    googleDriveParentUrl: "",
-    googleDriveClientId: "",
-    googleDriveClientSecret: "",
-    googleDriveAccessToken: "",
-    googleDriveRefreshToken: "",
-    googleDriveTokenExpiry: 0,
-    chromeDebugPort: 9222,
-    chromeUserDataDir: path.join(configDir, "chatgpt_profile"),
-    prompts: []
-  };
-  try {
-    const configPath = [CONFIG_PATH, LEGACY_CONFIG_PATH].find((candidate) => candidate && existsSync(candidate));
-    if (configPath) {
-      const data = await fs.readFile(configPath, "utf8");
-      cfg = { ...cfg, ...JSON.parse(data) };
-    }
-  } catch (err) {
-    console.error("Lỗi đọc config:", err);
-  }
+  const cfg = await configStore.load();
 
   // Normalize prompts to objects
   const defaultTitles = [
@@ -279,8 +315,11 @@ async function loadConfig() {
 
 // Helper: save config
 async function saveConfig(cfg) {
-  await fs.mkdir(configDir, { recursive: true });
-  await fs.writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
+  return configStore.save(cfg);
+}
+
+async function updateConfig(updater) {
+  return configStore.update(updater);
 }
 
 async function getNotionClient() {
@@ -381,58 +420,71 @@ app.post("/api/logs/clear", (req, res) => {
 
 // Load configuration
 app.get("/api/config", async (req, res) => {
-  const cfg = await loadConfig();
-  // OAuth credentials and tokens are backend-only. Expose only whether a
-  // client secret has already been saved so the UI can preserve it.
-  const { googleDriveClientSecret, googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = cfg;
-  res.json({
-    ...safeConfig,
-    googleDriveClientSecretConfigured: Boolean(googleDriveClientSecret)
-  });
+  try {
+    const config = await loadConfig();
+    if (!configSecurityMigrated && getElectronSafeStorage()) {
+      await saveConfig(config);
+      configSecurityMigrated = true;
+    }
+    res.json(redactConfig(config));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Save configuration
 app.post("/api/config", async (req, res) => {
   try {
     const newCfg = req.body;
-    const cfg = await loadConfig();
-    const clientIdChanged = Object.prototype.hasOwnProperty.call(newCfg, "googleDriveClientId")
-      && newCfg.googleDriveClientId !== cfg.googleDriveClientId;
-    const submittedClientSecret = typeof newCfg.googleDriveClientSecret === "string"
-      ? newCfg.googleDriveClientSecret.trim()
-      : "";
-    const merged = { ...cfg, ...newCfg };
-    if (submittedClientSecret) {
-      merged.googleDriveClientSecret = submittedClientSecret;
-    } else {
-      merged.googleDriveClientSecret = clientIdChanged ? "" : cfg.googleDriveClientSecret;
-    }
-    if (clientIdChanged) {
-      merged.googleDriveAccessToken = "";
-      merged.googleDriveRefreshToken = "";
-      merged.googleDriveTokenExpiry = 0;
-    }
-    await saveConfig(merged);
-    const { googleDriveClientSecret, googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = merged;
-    res.json({
-      success: true,
-      config: {
-        ...safeConfig,
-        googleDriveClientSecretConfigured: Boolean(googleDriveClientSecret)
+    const merged = await updateConfig((cfg) => {
+      const clientIdChanged = Object.prototype.hasOwnProperty.call(newCfg, "googleDriveClientId")
+        && newCfg.googleDriveClientId !== cfg.googleDriveClientId;
+      const submittedClientSecret = typeof newCfg.googleDriveClientSecret === "string"
+        ? newCfg.googleDriveClientSecret.trim()
+        : "";
+      const submittedOpenAiKey = typeof newCfg.openAiApiKey === "string" ? newCfg.openAiApiKey.trim() : "";
+      const submittedNotionKey = typeof newCfg.notionApiKey === "string" ? newCfg.notionApiKey.trim() : "";
+      const next = { ...cfg, ...newCfg };
+      next.openAiApiKey = submittedOpenAiKey || cfg.openAiApiKey;
+      next.notionApiKey = submittedNotionKey || cfg.notionApiKey;
+      next.googleDriveClientSecret = submittedClientSecret || (clientIdChanged ? "" : cfg.googleDriveClientSecret);
+      if (clientIdChanged) {
+        next.googleDriveAccessToken = "";
+        next.googleDriveRefreshToken = "";
+        next.googleDriveTokenExpiry = 0;
       }
+      return next;
     });
+    res.json({ success: true, config: redactConfig(merged) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+async function saveGoogleDriveParentUrl(req, res) {
+  try {
+    const googleDriveParentUrl = String(req.body?.googleDriveParentUrl || "").trim();
+    const config = await updateConfig((current) => ({ ...current, googleDriveParentUrl }));
+    res.json({ success: true, googleDriveParentUrl: config.googleDriveParentUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+app.patch("/api/config/google-drive-parent", saveGoogleDriveParentUrl);
+app.post("/api/config/google-drive-parent", saveGoogleDriveParentUrl);
+
 app.get("/api/google-drive/status", async (req, res) => {
-  const config = await loadConfig();
-  res.json({
-    configured: Boolean(config.googleDriveClientId),
-    clientSecretConfigured: Boolean(config.googleDriveClientSecret),
-    connected: Boolean(config.googleDriveRefreshToken || (config.googleDriveAccessToken && Number(config.googleDriveTokenExpiry) > Date.now()))
-  });
+  try {
+    const config = await loadConfig();
+    res.json({
+      configured: Boolean(config.googleDriveClientId),
+      clientSecretConfigured: Boolean(config.googleDriveClientSecret),
+      connected: Boolean(config.googleDriveRefreshToken || (config.googleDriveAccessToken && Number(config.googleDriveTokenExpiry) > Date.now()))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/google-drive/start-auth", async (req, res) => {
@@ -489,13 +541,12 @@ app.get("/api/google-drive/oauth/callback", async (req, res) => {
     });
     const tokens = await response.json();
     if (!response.ok || !tokens.access_token) throw new Error(tokens.error_description || "Không đổi được mã xác thực Google Drive.");
-    const config = await loadConfig();
-    await saveConfig({
+    await updateConfig((config) => ({
       ...config,
       googleDriveAccessToken: tokens.access_token,
       googleDriveRefreshToken: tokens.refresh_token || config.googleDriveRefreshToken || "",
       googleDriveTokenExpiry: Date.now() + Number(tokens.expires_in || 3600) * 1000
-    });
+    }));
     addLog("Đã kết nối Google Drive thành công.", "success");
     res.type("html").send("<html><body style='font-family:system-ui;text-align:center;padding:48px'><h2>Đã kết nối Google Drive</h2><p>Bạn có thể đóng cửa sổ này và quay lại Notion Product Creator.</p><script>setTimeout(() => window.close(), 1200)</script></body></html>");
   } catch (err) {
@@ -526,12 +577,12 @@ app.post("/api/google-drive/disconnect", async (req, res) => {
     }
 
     pendingGoogleDriveOAuth = null;
-    await saveConfig({
-      ...config,
+    await updateConfig((current) => ({
+      ...current,
       googleDriveAccessToken: "",
       googleDriveRefreshToken: "",
       googleDriveTokenExpiry: 0
-    });
+    }));
     addLog("Đã ngắt kết nối tài khoản Google Drive. Client ID vẫn được giữ lại.", "success");
     res.json({
       success: true,
@@ -550,11 +601,10 @@ app.post("/api/app/clear-product-cache", (req, res) => {
 
 // Test OpenAI API Key
 app.post("/api/openai/check", async (req, res) => {
-  const { apiKey } = req.body;
-  if (!apiKey) {
-    return res.status(400).json({ error: "Vui lòng cung cấp API Key." });
-  }
   try {
+    const config = await loadConfig();
+    const apiKey = String(req.body?.apiKey || "").trim() || config.openAiApiKey;
+    if (!apiKey) return res.status(400).json({ error: "Vui lòng cung cấp API Key." });
     const openai = new OpenAI({ apiKey });
     await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -862,11 +912,11 @@ async function getGoogleDriveAccessToken() {
   if (!response.ok || !tokens.access_token) {
     throw new Error(tokens.error_description || "Không thể làm mới quyền Google Drive. Hãy kết nối lại Google Drive.");
   }
-  await saveConfig({
-    ...config,
+  await updateConfig((current) => ({
+    ...current,
     googleDriveAccessToken: tokens.access_token,
     googleDriveTokenExpiry: Date.now() + Number(tokens.expires_in || 3600) * 1000
-  });
+  }));
   return tokens.access_token;
 }
 
@@ -1322,13 +1372,13 @@ app.post("/api/facebook/publish", async (req, res) => {
       page_id: record.id,
       properties: {
         "Bài content Tây": { relation: relatedContent },
-        Facebook: { select: { name: "Đã đăng" } }
+        Facebook: { select: { name: "Chờ đăng" } }
       }
     });
     res.json({
       success: true,
       facebookContentPageUrl: facebookContentPage.url,
-      message: "Đã đưa nội dung và ảnh vào form Facebook, đồng thời lưu bài Facebook vào Notion."
+      message: "Đã đưa nội dung và ảnh vào form Facebook, lưu bài vào Notion và chuyển trạng thái thành Chờ đăng."
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
   finally { if (browser) await browser.close(); }
@@ -1502,7 +1552,7 @@ app.post("/api/notion/sync", async (req, res) => {
 
 // Start Server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, "127.0.0.1", () => {
   addLog(`Server chạy tại: http://localhost:${PORT}`, "info");
   
   // Launch GUI App Mode automatically
