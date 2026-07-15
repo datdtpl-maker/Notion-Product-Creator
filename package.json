@@ -8,8 +8,8 @@
     "start": "electron .",
     "dev": "electron .",
     "test": "node --test test/*.test.js",
-    "electron-build": "electron-builder build --win --x64",
-    "electron-build-mac": "electron-builder build --mac dmg --universal"
+    "electron-build": "electron-builder build --win --x64 --publish never",
+    "electron-build-mac": "electron-builder build --mac dmg --universal --publish never"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.0",
