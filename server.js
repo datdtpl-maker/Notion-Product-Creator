@@ -391,8 +391,15 @@ app.post("/api/config", async (req, res) => {
     const newCfg = req.body;
     const cfg = await loadConfig();
     const merged = { ...cfg, ...newCfg };
+    if (Object.prototype.hasOwnProperty.call(newCfg, "googleDriveClientId")
+      && newCfg.googleDriveClientId !== cfg.googleDriveClientId) {
+      merged.googleDriveAccessToken = "";
+      merged.googleDriveRefreshToken = "";
+      merged.googleDriveTokenExpiry = 0;
+    }
     await saveConfig(merged);
-    res.json({ success: true, config: merged });
+    const { googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = merged;
+    res.json({ success: true, config: safeConfig });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -426,7 +433,7 @@ app.post("/api/google-drive/start-auth", async (req, res) => {
       response_type: "code",
       scope: "https://www.googleapis.com/auth/drive.metadata.readonly",
       access_type: "offline",
-      prompt: "consent",
+      prompt: "select_account consent",
       state,
       code_challenge: challenge,
       code_challenge_method: "S256"
@@ -469,6 +476,43 @@ app.get("/api/google-drive/oauth/callback", async (req, res) => {
     res.status(400).type("html").send(`<html><body style='font-family:system-ui;padding:48px'><h2>Kết nối Google Drive thất bại</h2><p>${String(err.message).replace(/[<>&]/g, "")}</p></body></html>`);
   } finally {
     pendingGoogleDriveOAuth = null;
+  }
+});
+
+app.post("/api/google-drive/disconnect", async (req, res) => {
+  try {
+    const config = await loadConfig();
+    const token = config.googleDriveRefreshToken || config.googleDriveAccessToken;
+    let revokedRemotely = false;
+
+    if (token) {
+      try {
+        const revokeResponse = await fetch("https://oauth2.googleapis.com/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token })
+        });
+        revokedRemotely = revokeResponse.ok;
+      } catch (err) {
+        addLog(`Không thể thu hồi quyền Google từ xa: ${err.message}`, "warning");
+      }
+    }
+
+    pendingGoogleDriveOAuth = null;
+    await saveConfig({
+      ...config,
+      googleDriveAccessToken: "",
+      googleDriveRefreshToken: "",
+      googleDriveTokenExpiry: 0
+    });
+    addLog("Đã ngắt kết nối tài khoản Google Drive. Client ID vẫn được giữ lại.", "success");
+    res.json({
+      success: true,
+      revokedRemotely,
+      message: "Đã ngắt kết nối Google Drive. Bấm Kết nối Google Drive để chọn tài khoản khác."
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

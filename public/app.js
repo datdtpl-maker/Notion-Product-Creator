@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const notionKeyInput = document.getElementById("notion-key");
   const googleDriveClientIdInput = document.getElementById("google-drive-client-id");
   const btnConnectGoogleDrive = document.getElementById("btn-connect-google-drive");
+  const btnDisconnectGoogleDrive = document.getElementById("btn-disconnect-google-drive");
   const googleDriveStatus = document.getElementById("google-drive-status");
   const btnToggleNotionKey = document.getElementById("btn-toggle-notion-key");
   const btnCheckKey = document.getElementById("btn-check-key");
@@ -200,10 +201,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const status = await response.json();
       if (status.connected) {
         googleDriveStatus.textContent = "Đã kết nối";
+        btnConnectGoogleDrive.textContent = "Kết nối lại";
+        btnDisconnectGoogleDrive.hidden = false;
       } else if (status.configured) {
         googleDriveStatus.textContent = "Chưa cấp quyền";
+        btnConnectGoogleDrive.textContent = "Kết nối Google Drive";
+        btnDisconnectGoogleDrive.hidden = true;
       } else {
         googleDriveStatus.textContent = "Chưa nhập Client ID";
+        btnConnectGoogleDrive.textContent = "Kết nối Google Drive";
+        btnDisconnectGoogleDrive.hidden = true;
       }
     } catch {
       googleDriveStatus.textContent = "Không kiểm tra được";
@@ -242,6 +249,26 @@ document.addEventListener("DOMContentLoaded", () => {
       alert(err.message);
     } finally {
       btnConnectGoogleDrive.disabled = false;
+    }
+  }
+
+  async function disconnectGoogleDrive() {
+    const confirmed = window.confirm("Ngắt kết nối tài khoản Google Drive hiện tại? Client ID và các cấu hình khác vẫn được giữ lại.");
+    if (!confirmed) return;
+
+    btnDisconnectGoogleDrive.disabled = true;
+    try {
+      const response = await fetch("/api/google-drive/disconnect", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Không thể ngắt kết nối Google Drive.");
+      await refreshGoogleDriveStatus();
+      appendLocalLog(data.message, "success");
+      alert(`${data.message}\n\nKhi kết nối lại, Google sẽ hiển thị màn hình chọn tài khoản.`);
+    } catch (err) {
+      appendLocalLog(`Ngắt kết nối Google Drive thất bại: ${err.message}`, "error");
+      alert(err.message);
+    } finally {
+      btnDisconnectGoogleDrive.disabled = false;
     }
   }
 
@@ -507,6 +534,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   btnConnectGoogleDrive.addEventListener("click", connectGoogleDrive);
+  btnDisconnectGoogleDrive.addEventListener("click", disconnectGoogleDrive);
 
   // Image upload click/drop
   imageDropzone.addEventListener("click", () => refImageInput.click());

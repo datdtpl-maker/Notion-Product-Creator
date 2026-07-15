@@ -340,10 +340,20 @@ textarea:focus {
 
 .google-drive-auth-row {
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .google-drive-auth-row .desc-text {
+  flex: 1 1 100%;
   min-width: 0;
+}
+
+.google-drive-auth-row .btn {
+  flex: 1 1 auto;
+}
+
+.google-drive-auth-row .btn[hidden] {
+  display: none;
 }
 
 /* Buttons */
