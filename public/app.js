@@ -86,6 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let pendingFacebookProducts = [];
   let currentProductDriveUrl = "";
   let googleDriveClientSecretConfigured = false;
+  let productDriveUrlSaveTimer = null;
 
   // --- Functions ---
 
@@ -144,6 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ? "Đã lưu — nhập mới để thay đổi"
         : "Nhập Client Secret";
       driveParentInput.value = config.defaultDriveParent || "";
+      productDriveUrlInput.value = config.googleDriveParentUrl || "";
       facebookPageUrlInput.value = config.facebookPageUrl || "";
       facebookMediaParentInput.value = config.facebookMediaParent || config.defaultDriveParent || "";
       facebookTemplateInput.value = config.facebookTemplate || "";
@@ -179,6 +181,7 @@ document.addEventListener("DOMContentLoaded", () => {
       notionApiKey: notionKeyInput.value.trim(),
       googleDriveClientId: googleDriveClientIdInput.value.trim(),
       defaultDriveParent: driveParentInput.value.trim(),
+      googleDriveParentUrl: productDriveUrlInput.value.trim(),
       facebookPageUrl: facebookPageUrlInput.value.trim(),
       facebookMediaParent: facebookMediaParentInput.value.trim(),
       facebookTemplate: facebookTemplateInput.value.trim(),
@@ -550,6 +553,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  productDriveUrlInput.addEventListener("input", () => {
+    clearTimeout(productDriveUrlSaveTimer);
+    productDriveUrlSaveTimer = setTimeout(async () => {
+      try {
+        await saveConfig();
+        appendLocalLog("Đã tự động lưu link Google Drive thư mục cha trên máy này.", "success");
+      } catch (err) {
+        appendLocalLog(`Không thể lưu link thư mục cha: ${err.message}`, "error");
+      }
+    }, 400);
+  });
+
   btnToggleNotionKey.addEventListener("click", () => {
     const isHidden = notionKeyInput.type === "password";
     notionKeyInput.type = isHidden ? "text" : "password";
@@ -681,7 +696,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   btnClearProductCache.addEventListener("click", async () => {
-    const confirmed = window.confirm("Xóa dữ liệu của sản phẩm đang làm để bắt đầu sản phẩm mới? API key, Notion token, Google Drive OAuth và 4 prompt vẫn được giữ lại.");
+    const confirmed = window.confirm("Xóa dữ liệu của sản phẩm đang làm để bắt đầu sản phẩm mới? API key, Notion token, Google Drive OAuth, link thư mục cha và 4 prompt vẫn được giữ lại.");
     if (!confirmed) return;
 
     try {
@@ -694,7 +709,6 @@ document.addEventListener("DOMContentLoaded", () => {
       prodPriceInput.value = "350.000";
       prodDetailsInput.value = "";
       articleContentTextarea.value = "";
-      productDriveUrlInput.value = "";
       currentProductDriveUrl = "";
       referenceImageBase64 = null;
       refImageInput.value = "";
@@ -711,7 +725,7 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLocalLog("Đã xóa cache sản phẩm. Có thể bắt đầu sản phẩm mới.", "success");
       showCompletionPopup({
         title: "Đã xóa cache sản phẩm",
-        message: "Dữ liệu sản phẩm hiện tại đã được làm mới. API key, Notion token, Google Drive OAuth và prompt vẫn được giữ lại."
+        message: "Dữ liệu sản phẩm hiện tại đã được làm mới. API key, Notion token, Google Drive OAuth, link thư mục cha và prompt vẫn được giữ lại."
       });
     } catch (err) {
       appendLocalLog(`Xóa cache sản phẩm thất bại: ${err.message}`, "error");

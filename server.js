@@ -236,6 +236,7 @@ async function loadConfig() {
     openAiApiKey: "",
     notionApiKey: "",
     defaultDriveParent: "",
+    googleDriveParentUrl: "",
     googleDriveClientId: "",
     googleDriveClientSecret: "",
     googleDriveAccessToken: "",
@@ -544,7 +545,7 @@ app.post("/api/google-drive/disconnect", async (req, res) => {
 
 app.post("/api/app/clear-product-cache", (req, res) => {
   logs = [];
-  res.json({ success: true, message: "Đã xóa cache phiên sản phẩm. API Key, Notion token, Google Drive OAuth và prompt vẫn được giữ lại." });
+  res.json({ success: true, message: "Đã xóa cache phiên sản phẩm. API Key, Notion token, Google Drive OAuth, link thư mục cha và prompt vẫn được giữ lại." });
 });
 
 // Test OpenAI API Key
