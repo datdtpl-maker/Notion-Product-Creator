@@ -237,6 +237,7 @@ async function loadConfig() {
     notionApiKey: "",
     defaultDriveParent: "",
     googleDriveClientId: "",
+    googleDriveClientSecret: "",
     googleDriveAccessToken: "",
     googleDriveRefreshToken: "",
     googleDriveTokenExpiry: 0,
@@ -380,9 +381,13 @@ app.post("/api/logs/clear", (req, res) => {
 // Load configuration
 app.get("/api/config", async (req, res) => {
   const cfg = await loadConfig();
-  // OAuth tokens are only needed by the backend. Do not expose them to the renderer.
-  const { googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = cfg;
-  res.json(safeConfig);
+  // OAuth credentials and tokens are backend-only. Expose only whether a
+  // client secret has already been saved so the UI can preserve it.
+  const { googleDriveClientSecret, googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = cfg;
+  res.json({
+    ...safeConfig,
+    googleDriveClientSecretConfigured: Boolean(googleDriveClientSecret)
+  });
 });
 
 // Save configuration
@@ -390,16 +395,31 @@ app.post("/api/config", async (req, res) => {
   try {
     const newCfg = req.body;
     const cfg = await loadConfig();
+    const clientIdChanged = Object.prototype.hasOwnProperty.call(newCfg, "googleDriveClientId")
+      && newCfg.googleDriveClientId !== cfg.googleDriveClientId;
+    const submittedClientSecret = typeof newCfg.googleDriveClientSecret === "string"
+      ? newCfg.googleDriveClientSecret.trim()
+      : "";
     const merged = { ...cfg, ...newCfg };
-    if (Object.prototype.hasOwnProperty.call(newCfg, "googleDriveClientId")
-      && newCfg.googleDriveClientId !== cfg.googleDriveClientId) {
+    if (submittedClientSecret) {
+      merged.googleDriveClientSecret = submittedClientSecret;
+    } else {
+      merged.googleDriveClientSecret = clientIdChanged ? "" : cfg.googleDriveClientSecret;
+    }
+    if (clientIdChanged) {
       merged.googleDriveAccessToken = "";
       merged.googleDriveRefreshToken = "";
       merged.googleDriveTokenExpiry = 0;
     }
     await saveConfig(merged);
-    const { googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = merged;
-    res.json({ success: true, config: safeConfig });
+    const { googleDriveClientSecret, googleDriveAccessToken, googleDriveRefreshToken, ...safeConfig } = merged;
+    res.json({
+      success: true,
+      config: {
+        ...safeConfig,
+        googleDriveClientSecretConfigured: Boolean(googleDriveClientSecret)
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -409,6 +429,7 @@ app.get("/api/google-drive/status", async (req, res) => {
   const config = await loadConfig();
   res.json({
     configured: Boolean(config.googleDriveClientId),
+    clientSecretConfigured: Boolean(config.googleDriveClientSecret),
     connected: Boolean(config.googleDriveRefreshToken || (config.googleDriveAccessToken && Number(config.googleDriveTokenExpiry) > Date.now()))
   });
 });
@@ -417,15 +438,19 @@ app.post("/api/google-drive/start-auth", async (req, res) => {
   try {
     const config = await loadConfig();
     const clientId = config.googleDriveClientId?.trim();
+    const clientSecret = config.googleDriveClientSecret?.trim();
     if (!clientId || !clientId.endsWith(".apps.googleusercontent.com")) {
       return res.status(400).json({ error: "Hãy nhập Google OAuth Client ID dạng ...apps.googleusercontent.com và lưu cấu hình trước." });
+    }
+    if (!clientSecret) {
+      return res.status(400).json({ error: "Hãy nhập Google OAuth Client Secret và lưu cấu hình trước." });
     }
 
     const state = nodeCrypto.randomBytes(24).toString("base64url");
     const verifier = nodeCrypto.randomBytes(48).toString("base64url");
     const challenge = nodeCrypto.createHash("sha256").update(verifier).digest("base64url");
     const redirectUri = "http://127.0.0.1:3000/api/google-drive/oauth/callback";
-    pendingGoogleDriveOAuth = { state, verifier, redirectUri, clientId };
+    pendingGoogleDriveOAuth = { state, verifier, redirectUri, clientId, clientSecret };
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -455,6 +480,7 @@ app.get("/api/google-drive/oauth/callback", async (req, res) => {
       body: new URLSearchParams({
         code: String(req.query.code),
         client_id: pending.clientId,
+        client_secret: pending.clientSecret,
         redirect_uri: pending.redirectUri,
         grant_type: "authorization_code",
         code_verifier: pending.verifier
@@ -817,7 +843,7 @@ async function getGoogleDriveAccessToken() {
   if (config.googleDriveAccessToken && Number(config.googleDriveTokenExpiry) > Date.now() + 30_000) {
     return config.googleDriveAccessToken;
   }
-  if (!config.googleDriveClientId || !config.googleDriveRefreshToken) {
+  if (!config.googleDriveClientId || !config.googleDriveClientSecret || !config.googleDriveRefreshToken) {
     throw new Error("Chưa kết nối Google Drive. Hãy nhập Client ID rồi bấm Kết nối Google Drive.");
   }
 
@@ -826,6 +852,7 @@ async function getGoogleDriveAccessToken() {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: config.googleDriveClientId,
+      client_secret: config.googleDriveClientSecret,
       refresh_token: config.googleDriveRefreshToken,
       grant_type: "refresh_token"
     })

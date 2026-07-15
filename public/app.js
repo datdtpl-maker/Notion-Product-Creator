@@ -3,6 +3,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const openaiKeyInput = document.getElementById("openai-key");
   const notionKeyInput = document.getElementById("notion-key");
   const googleDriveClientIdInput = document.getElementById("google-drive-client-id");
+  const googleDriveClientSecretInput = document.getElementById("google-drive-client-secret");
+  const btnToggleGoogleDriveSecret = document.getElementById("btn-toggle-google-drive-secret");
   const btnConnectGoogleDrive = document.getElementById("btn-connect-google-drive");
   const btnDisconnectGoogleDrive = document.getElementById("btn-disconnect-google-drive");
   const googleDriveStatus = document.getElementById("google-drive-status");
@@ -83,6 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let facebookProduct = null;
   let pendingFacebookProducts = [];
   let currentProductDriveUrl = "";
+  let googleDriveClientSecretConfigured = false;
 
   // --- Functions ---
 
@@ -135,6 +138,11 @@ document.addEventListener("DOMContentLoaded", () => {
       openaiKeyInput.value = config.openAiApiKey || "";
       notionKeyInput.value = config.notionApiKey || "";
       googleDriveClientIdInput.value = config.googleDriveClientId || "";
+      googleDriveClientSecretConfigured = Boolean(config.googleDriveClientSecretConfigured);
+      googleDriveClientSecretInput.value = "";
+      googleDriveClientSecretInput.placeholder = googleDriveClientSecretConfigured
+        ? "Đã lưu — nhập mới để thay đổi"
+        : "Nhập Client Secret";
       driveParentInput.value = config.defaultDriveParent || "";
       facebookPageUrlInput.value = config.facebookPageUrl || "";
       facebookMediaParentInput.value = config.facebookMediaParent || config.defaultDriveParent || "";
@@ -179,6 +187,8 @@ document.addEventListener("DOMContentLoaded", () => {
         content: p.contentInput.value.trim()
       }))
     };
+    const clientSecret = googleDriveClientSecretInput.value.trim();
+    if (clientSecret) config.googleDriveClientSecret = clientSecret;
     try {
       const response = await fetch("/api/config", {
         method: "POST",
@@ -188,6 +198,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
         throw new Error(result.error || "Không thể lưu cấu hình.");
+      }
+      const result = await response.json();
+      googleDriveClientSecretConfigured = Boolean(result.config?.googleDriveClientSecretConfigured);
+      if (clientSecret) {
+        googleDriveClientSecretInput.value = "";
+        googleDriveClientSecretInput.placeholder = "Đã lưu — nhập mới để thay đổi";
       }
     } catch (err) {
       console.error("Lỗi lưu config:", err);
@@ -203,6 +219,10 @@ document.addEventListener("DOMContentLoaded", () => {
         googleDriveStatus.textContent = "Đã kết nối";
         btnConnectGoogleDrive.textContent = "Kết nối lại";
         btnDisconnectGoogleDrive.hidden = false;
+      } else if (status.configured && !status.clientSecretConfigured) {
+        googleDriveStatus.textContent = "Thiếu Client Secret";
+        btnConnectGoogleDrive.textContent = "Kết nối Google Drive";
+        btnDisconnectGoogleDrive.hidden = true;
       } else if (status.configured) {
         googleDriveStatus.textContent = "Chưa cấp quyền";
         btnConnectGoogleDrive.textContent = "Kết nối Google Drive";
@@ -219,8 +239,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function connectGoogleDrive() {
     const clientId = googleDriveClientIdInput.value.trim();
+    const hasClientSecret = Boolean(googleDriveClientSecretInput.value.trim()) || googleDriveClientSecretConfigured;
     if (!clientId.endsWith(".apps.googleusercontent.com")) {
       alert("Hãy nhập Google Drive OAuth Client ID dạng ...apps.googleusercontent.com.");
+      return;
+    }
+    if (!hasClientSecret) {
+      alert("Hãy nhập Google Drive OAuth Client Secret.");
       return;
     }
     btnConnectGoogleDrive.disabled = true;
@@ -531,6 +556,14 @@ document.addEventListener("DOMContentLoaded", () => {
     btnToggleNotionKey.textContent = isHidden ? "Ẩn" : "Hiện";
     btnToggleNotionKey.setAttribute("aria-pressed", String(isHidden));
     btnToggleNotionKey.setAttribute("aria-label", isHidden ? "Ẩn Notion Access Token" : "Hiện Notion Access Token");
+  });
+
+  btnToggleGoogleDriveSecret.addEventListener("click", () => {
+    const isHidden = googleDriveClientSecretInput.type === "password";
+    googleDriveClientSecretInput.type = isHidden ? "text" : "password";
+    btnToggleGoogleDriveSecret.textContent = isHidden ? "Ẩn" : "Hiện";
+    btnToggleGoogleDriveSecret.setAttribute("aria-pressed", String(isHidden));
+    btnToggleGoogleDriveSecret.setAttribute("aria-label", isHidden ? "Ẩn Google Drive Client Secret" : "Hiện Google Drive Client Secret");
   });
 
   btnConnectGoogleDrive.addEventListener("click", connectGoogleDrive);
