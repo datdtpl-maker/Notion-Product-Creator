@@ -1,6 +1,6 @@
 {
   "name": "notion-product-creator",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "App tự động hóa viết bài sản phẩm, tạo ảnh ChatGPT và cập nhật Notion",
   "main": "main.js",
   "bin": "server.js",

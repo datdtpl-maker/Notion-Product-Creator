@@ -19,6 +19,7 @@ const OpenAI = require("openai");
 const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
 const { createConfigStore, redactConfig } = require("./lib/config-store");
+const { listNumberedImages, resolveProductImageFolder } = require("./lib/product-image-folder");
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -1335,8 +1336,8 @@ app.post("/api/facebook/publish", async (req, res) => {
     const { productName, content, driveParent } = req.body;
     const config = await loadConfig();
     if (!config.facebookPageUrl) return res.status(400).json({ error: "Chưa cấu hình URL Page Facebook." });
-    const folder = path.join(driveParent || config.defaultDriveParent || "", productName.replace(/[\\/:*?\"<>|]/g, ""));
-    const imagePaths = (await fs.readdir(folder)).filter((file) => /^\d+\.(png|jpe?g|webp)$/i.test(file)).sort().map((file) => path.join(folder, file));
+    const folder = await resolveProductImageFolder(driveParent || config.defaultDriveParent || "", productName);
+    const imagePaths = (await listNumberedImages(folder)).map((file) => path.join(folder, file));
     if (!imagePaths.length) return res.status(400).json({ error: "Không tìm thấy ảnh 1.png đến 4.png trong thư mục sản phẩm." });
     browser = await chromium.connectOverCDP(`http://localhost:${config.facebookDebugPort || 9223}`);
     const context = browser.contexts()[0]; const page = context.pages()[0] || await context.newPage();
@@ -1386,7 +1387,7 @@ app.post("/api/facebook/publish", async (req, res) => {
       facebookContentPageUrl: facebookContentPage.url,
       message: "Đã đưa nội dung và ảnh vào form Facebook, lưu bài vào Notion và chuyển trạng thái thành Chờ đăng."
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.code === "PRODUCT_IMAGE_FOLDER_NOT_FOUND" ? 400 : 500).json({ error: err.message }); }
   finally { if (browser) await browser.close(); }
 });
 
