@@ -204,8 +204,9 @@ body.light-mode .status-badge {
 .facebook-workspace { display:grid; grid-template-columns:360px 1fr 320px; gap:20px; padding:20px; height:calc(100vh - 122px); }
 .facebook-column { display:flex; flex-direction:column; min-height:0; }
 .facebook-product-info { padding:12px; border:1px solid var(--surface-border); border-radius:10px; color:var(--text-muted); background:var(--input-bg); font-size:13px; line-height:1.6; }
-.pending-products-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+.pending-products-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:8px; }
 .pending-products-heading label { margin-bottom:0; }
+.pending-products-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
 .btn-compact { width:auto; padding:7px 10px; font-size:12px; }
 .facebook-pending-products { max-height:190px; overflow:auto; border:1px solid var(--surface-border); border-radius:10px; background:var(--input-bg); padding:6px; color:var(--text-muted); font-size:13px; }
 .facebook-pending-product { display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:7px; cursor:pointer; color:var(--text); }

@@ -19,6 +19,7 @@ const OpenAI = require("openai");
 const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
 const { createConfigStore, redactConfig } = require("./lib/config-store");
+const { listFacebookProductsByStatus, markFacebookProductsAsPublished } = require("./lib/facebook-status");
 const { listNumberedImages, resolveProductImageFolder } = require("./lib/product-image-folder");
 
 const execAsync = promisify(exec);
@@ -1266,45 +1267,48 @@ app.post("/api/facebook/start", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+const COORDINATION_DATABASE_ID = "9788b8a0-31cc-42d3-91be-4e26d6b8c8e8";
+
 // List products that are ready to be prepared for Facebook posting.
 app.get("/api/facebook/pending-products", async (req, res) => {
   try {
-    const coordinationDbId = "9788b8a0-31cc-42d3-91be-4e26d6b8c8e8";
     const notion = await getNotionClient();
-    const products = [];
-    let startCursor;
-
-    do {
-      const response = await notion.databases.query({
-        database_id: coordinationDbId,
-        page_size: 100,
-        start_cursor: startCursor,
-        filter: {
-          property: "Facebook",
-          select: { equals: "Chưa đăng" }
-        }
-      });
-
-      for (const page of response.results) {
-        const productName = (page.properties["Tên sản phẩm"]?.title || [])
-          .map((item) => item.plain_text)
-          .join("")
-          .trim();
-        if (!productName) continue;
-        products.push({
-          pageId: page.id,
-          productName,
-          webUrl: page.properties["Link web"]?.url || "",
-          mediaUrl: page.properties["Media sản phẩm"]?.url || ""
-        });
-      }
-      startCursor = response.has_more ? response.next_cursor : undefined;
-    } while (startCursor);
-
-    products.sort((a, b) => a.productName.localeCompare(b.productName, "vi"));
+    const products = await listFacebookProductsByStatus(notion, COORDINATION_DATABASE_ID, "Chưa đăng");
     res.json({ products });
   } catch (err) {
     res.status(500).json({ error: `Không thể quét danh sách Notion: ${err.message}` });
+  }
+});
+
+app.get("/api/facebook/waiting-products", async (req, res) => {
+  try {
+    const notion = await getNotionClient();
+    const products = await listFacebookProductsByStatus(notion, COORDINATION_DATABASE_ID, "Chờ đăng");
+    res.json({ products });
+  } catch (err) {
+    res.status(500).json({ error: `Không thể quét bài Facebook Chờ đăng: ${err.message}` });
+  }
+});
+
+app.post("/api/facebook/mark-waiting-as-published", async (req, res) => {
+  try {
+    const notion = await getNotionClient();
+    const products = await listFacebookProductsByStatus(notion, COORDINATION_DATABASE_ID, "Chờ đăng");
+    if (!products.length) return res.json({ success: true, updatedCount: 0, products: [] });
+
+    const result = await markFacebookProductsAsPublished(notion, products);
+    if (result.failures.length) {
+      return res.status(500).json({
+        error: `Đã cập nhật ${result.updatedCount}/${products.length} bài. ${result.failures.length} bài bị lỗi; hãy quét lại để thử tiếp.`,
+        updatedCount: result.updatedCount,
+        failures: result.failures
+      });
+    }
+
+    addLog(`Đã xác nhận ${result.updatedCount} bài Facebook và chuyển Notion sang trạng thái “Đã đăng”.`, "success");
+    res.json({ success: true, updatedCount: result.updatedCount, products });
+  } catch (err) {
+    res.status(500).json({ error: `Không thể cập nhật trạng thái Facebook: ${err.message}` });
   }
 });
 

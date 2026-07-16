@@ -71,6 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const facebookTemplateInput = document.getElementById("facebook-template");
   const facebookPendingProducts = document.getElementById("facebook-pending-products");
   const btnRefreshFacebookProducts = document.getElementById("btn-refresh-facebook-products");
+  const btnConfirmFacebookPublished = document.getElementById("btn-confirm-facebook-published");
   const facebookContentInput = document.getElementById("facebook-content");
   const facebookProductInfo = document.getElementById("facebook-product-info");
   const facebookLogBox = document.getElementById("facebook-log-box");
@@ -964,6 +965,55 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   btnRefreshFacebookProducts.addEventListener("click", loadPendingFacebookProducts);
+
+  async function confirmWaitingFacebookProducts() {
+    const originalLabel = btnConfirmFacebookPublished.textContent;
+    btnConfirmFacebookPublished.disabled = true;
+    btnConfirmFacebookPublished.textContent = "Đang quét Chờ đăng...";
+    try {
+      const waitingResponse = await fetch("/api/facebook/waiting-products");
+      const waitingData = await waitingResponse.json();
+      if (!waitingResponse.ok) throw new Error(waitingData.error || "Không thể quét bài Chờ đăng.");
+
+      const waitingProducts = waitingData.products || [];
+      if (!waitingProducts.length) {
+        showCompletionPopup({
+          title: "Không có bài Chờ đăng",
+          message: "Notion hiện không có sản phẩm nào cần chuyển trạng thái Facebook sang Đã đăng."
+        });
+        return;
+      }
+
+      const visibleNames = waitingProducts.slice(0, 8).map((product) => `• ${product.productName}`).join("\n");
+      const remainingText = waitingProducts.length > 8 ? `\n• ... và ${waitingProducts.length - 8} bài khác` : "";
+      const confirmed = window.confirm(
+        `Tìm thấy ${waitingProducts.length} bài Facebook đang ở trạng thái “Chờ đăng”:\n\n` +
+        `${visibleNames}${remainingText}\n\n` +
+        "Chỉ tiếp tục nếu bạn đã bấm Đăng các bài này trên Facebook. Chuyển tất cả sang “Đã đăng”?"
+      );
+      if (!confirmed) return;
+
+      btnConfirmFacebookPublished.textContent = "Đang cập nhật Notion...";
+      const updateResponse = await fetch("/api/facebook/mark-waiting-as-published", { method: "POST" });
+      const updateData = await updateResponse.json();
+      if (!updateResponse.ok) throw new Error(updateData.error || "Không thể cập nhật trạng thái Facebook.");
+
+      appendLocalLog(`Đã chuyển ${updateData.updatedCount} bài Facebook từ Chờ đăng sang Đã đăng.`, "success");
+      showCompletionPopup({
+        title: "Đã cập nhật Notion",
+        message: `Hoàn thành: ${updateData.updatedCount} bài Facebook đã được chuyển từ “Chờ đăng” sang “Đã đăng”.`
+      });
+      await loadPendingFacebookProducts();
+    } catch (err) {
+      appendLocalLog(err.message, "error");
+      alert(err.message);
+    } finally {
+      btnConfirmFacebookPublished.disabled = false;
+      btnConfirmFacebookPublished.textContent = originalLabel;
+    }
+  }
+
+  btnConfirmFacebookPublished.addEventListener("click", confirmWaitingFacebookProducts);
 
   document.getElementById("btn-generate-facebook").addEventListener("click", async () => {
     if (!facebookProduct) return alert("Hãy lấy dữ liệu sản phẩm từ Notion trước.");
