@@ -14,6 +14,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSelectFolder = document.getElementById("btn-select-folder");
   const productDriveUrlInput = document.getElementById("product-drive-url");
   const btnSaveDriveParentUrl = document.getElementById("btn-save-drive-parent-url");
+  const logoImageUrlInput = document.getElementById("logo-image-url");
+  const btnSaveLogoImageUrl = document.getElementById("btn-save-logo-image-url");
   const btnClearProductCache = document.getElementById("btn-clear-product-cache");
   
   const prodNameInput = document.getElementById("prod-name");
@@ -156,6 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : "Nhập Client Secret";
       driveParentInput.value = config.defaultDriveParent || "";
       productDriveUrlInput.value = config.googleDriveParentUrl || "";
+      logoImageUrlInput.value = config.logoImageUrl || "";
       lastSavedGoogleDriveParentUrl = productDriveUrlInput.value.trim();
       facebookPageUrlInput.value = config.facebookPageUrl || "";
       facebookMediaParentInput.value = config.facebookMediaParent || config.defaultDriveParent || "";
@@ -193,6 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
       googleDriveClientId: googleDriveClientIdInput.value.trim(),
       defaultDriveParent: driveParentInput.value.trim(),
       googleDriveParentUrl: productDriveUrlInput.value.trim(),
+      logoImageUrl: logoImageUrlInput.value.trim(),
       facebookPageUrl: facebookPageUrlInput.value.trim(),
       facebookMediaParent: facebookMediaParentInput.value.trim(),
       facebookTemplate: facebookTemplateInput.value.trim(),
@@ -633,6 +637,32 @@ document.addEventListener("DOMContentLoaded", () => {
     navigator.sendBeacon("/api/config/google-drive-parent", payload);
   });
 
+  btnSaveLogoImageUrl.addEventListener("click", async () => {
+    const originalLabel = btnSaveLogoImageUrl.textContent;
+    btnSaveLogoImageUrl.disabled = true;
+    btnSaveLogoImageUrl.textContent = "Đang lưu...";
+    try {
+      const response = await fetch("/api/config/logo-image", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logoImageUrl: logoImageUrlInput.value.trim() })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Không thể lưu link hình logo.");
+      appendLocalLog("Đã lưu link hình logo dùng cho cả 4 ảnh.", "success");
+      btnSaveLogoImageUrl.textContent = "✓ Đã lưu link hình logo";
+      setTimeout(() => {
+        btnSaveLogoImageUrl.textContent = originalLabel;
+        btnSaveLogoImageUrl.disabled = false;
+      }, 1800);
+    } catch (err) {
+      appendLocalLog(`Không thể lưu link hình logo: ${err.message}`, "error");
+      alert(`Không thể lưu link hình logo: ${err.message}`);
+      btnSaveLogoImageUrl.textContent = originalLabel;
+      btnSaveLogoImageUrl.disabled = false;
+    }
+  });
+
   btnToggleNotionKey.addEventListener("click", () => {
     const isHidden = notionKeyInput.type === "password";
     notionKeyInput.type = isHidden ? "text" : "password";
@@ -764,7 +794,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   btnClearProductCache.addEventListener("click", async () => {
-    const confirmed = window.confirm("Xóa dữ liệu của sản phẩm đang làm để bắt đầu sản phẩm mới? API key, Notion token, Google Drive OAuth, link thư mục cha và 4 prompt vẫn được giữ lại.");
+    const confirmed = window.confirm("Xóa dữ liệu của sản phẩm đang làm để bắt đầu sản phẩm mới? API key, Notion token, Google Drive OAuth, link thư mục cha, link logo và 4 prompt vẫn được giữ lại.");
     if (!confirmed) return;
 
     try {
@@ -793,7 +823,7 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLocalLog("Đã xóa cache sản phẩm. Có thể bắt đầu sản phẩm mới.", "success");
       showCompletionPopup({
         title: "Đã xóa cache sản phẩm",
-        message: "Dữ liệu sản phẩm hiện tại đã được làm mới. API key, Notion token, Google Drive OAuth, link thư mục cha và prompt vẫn được giữ lại."
+        message: "Dữ liệu sản phẩm hiện tại đã được làm mới. API key, Notion token, Google Drive OAuth, link thư mục cha, link logo và prompt vẫn được giữ lại."
       });
     } catch (err) {
       appendLocalLog(`Xóa cache sản phẩm thất bại: ${err.message}`, "error");
@@ -848,7 +878,8 @@ document.addEventListener("DOMContentLoaded", () => {
             promptText,
             details,
             content,
-            referenceImage: index === "1" ? referenceImageBase64 : null
+            referenceImage: index === "1" ? referenceImageBase64 : null,
+            logoImageUrl: logoImageUrlInput.value.trim()
           })
         });
         const data = await res.json();

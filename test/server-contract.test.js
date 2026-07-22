@@ -58,10 +58,18 @@ test("local config API redacts secrets and product cache keeps the parent URL", 
     body: JSON.stringify({ googleDriveParentUrl: "https://drive.test/parent" })
   });
   assert.equal(response.ok, true);
+
+  response = await fetch(`${baseUrl}/api/config/logo-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ logoImageUrl: "https://drive.google.com/file/d/logo-file-id/view" })
+  });
+  assert.equal(response.ok, true);
   assert.equal((await fetch(`${baseUrl}/api/app/clear-product-cache`, { method: "POST" })).ok, true);
 
   const config = await (await fetch(`${baseUrl}/api/config`)).json();
   assert.equal(config.googleDriveParentUrl, "https://drive.test/parent");
+  assert.equal(config.logoImageUrl, "https://drive.google.com/file/d/logo-file-id/view");
   assert.equal(config.openAiApiKey, undefined);
   assert.equal(config.notionApiKey, undefined);
   assert.equal(config.openAiApiKeyConfigured, true);
@@ -102,4 +110,19 @@ test("Website UI exposes an explicit persistent Google Drive parent link button"
   assert.match(htmlSource, /id="btn-save-drive-parent-url"/);
   assert.match(appSource, /btnSaveDriveParentUrl\.addEventListener\("click"/);
   assert.match(appSource, /persistGoogleDriveParentUrl\(\{ silent: true \}\)/);
+});
+
+test("Website UI saves and sends the logo link for all four image prompts", async () => {
+  const root = path.resolve(__dirname, "..");
+  const [serverSource, appSource, htmlSource] = await Promise.all([
+    fs.readFile(path.join(root, "server.js"), "utf8"),
+    fs.readFile(path.join(root, "public", "app.js"), "utf8"),
+    fs.readFile(path.join(root, "public", "index.html"), "utf8")
+  ]);
+
+  assert.match(htmlSource, /id="logo-image-url"/);
+  assert.match(htmlSource, /id="btn-save-logo-image-url"/);
+  assert.match(appSource, /logoImageUrl:\s*logoImageUrlInput\.value\.trim\(\)/);
+  assert.match(serverSource, /downloadGoogleDriveLogo\(effectiveLogoUrl, targetFolder\)/);
+  assert.match(serverSource, /phía trên cùng bên phải/);
 });

@@ -22,6 +22,7 @@ const { inferConversationTurnRole, selectNewAssistantImage } = require("./lib/ch
 const { createConfigStore, redactConfig } = require("./lib/config-store");
 const { listFacebookProductsByStatus, markFacebookProductsAsPublished } = require("./lib/facebook-status");
 const { listNumberedImages, resolveProductImageFolder } = require("./lib/product-image-folder");
+const { getGoogleDriveFileId, downloadGoogleDriveLogo } = require("./lib/logo-image");
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -75,6 +76,7 @@ const CONFIG_DEFAULTS = {
   notionApiKey: "",
   defaultDriveParent: "",
   googleDriveParentUrl: "",
+  logoImageUrl: "https://drive.google.com/file/d/1N3ushR0ex_Nkr1hH9FkcaJnP90TStp60/view",
   googleDriveClientId: "",
   googleDriveClientSecret: "",
   googleDriveAccessToken: "",
@@ -505,6 +507,10 @@ app.post("/api/config", async (req, res) => {
         : "";
       const submittedOpenAiKey = typeof newCfg.openAiApiKey === "string" ? newCfg.openAiApiKey.trim() : "";
       const submittedNotionKey = typeof newCfg.notionApiKey === "string" ? newCfg.notionApiKey.trim() : "";
+      const submittedLogoUrl = typeof newCfg.logoImageUrl === "string" ? newCfg.logoImageUrl.trim() : "";
+      if (submittedLogoUrl && !getGoogleDriveFileId(submittedLogoUrl)) {
+        throw new Error("Link logo phải là link file Google Drive hợp lệ dạng drive.google.com/file/d/...");
+      }
       const next = { ...cfg, ...newCfg };
       next.openAiApiKey = submittedOpenAiKey || cfg.openAiApiKey;
       next.notionApiKey = submittedNotionKey || cfg.notionApiKey;
@@ -534,6 +540,22 @@ async function saveGoogleDriveParentUrl(req, res) {
 
 app.patch("/api/config/google-drive-parent", saveGoogleDriveParentUrl);
 app.post("/api/config/google-drive-parent", saveGoogleDriveParentUrl);
+
+async function saveLogoImageUrl(req, res) {
+  try {
+    const logoImageUrl = String(req.body?.logoImageUrl || "").trim();
+    if (logoImageUrl && !getGoogleDriveFileId(logoImageUrl)) {
+      return res.status(400).json({ error: "Link logo phải là link file Google Drive hợp lệ dạng drive.google.com/file/d/..." });
+    }
+    const config = await updateConfig((current) => ({ ...current, logoImageUrl }));
+    res.json({ success: true, logoImageUrl: config.logoImageUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+app.patch("/api/config/logo-image", saveLogoImageUrl);
+app.post("/api/config/logo-image", saveLogoImageUrl);
 
 app.get("/api/google-drive/status", async (req, res) => {
   try {
@@ -657,7 +679,7 @@ app.post("/api/google-drive/disconnect", async (req, res) => {
 
 app.post("/api/app/clear-product-cache", (req, res) => {
   logs = [];
-  res.json({ success: true, message: "Đã xóa cache phiên sản phẩm. API Key, Notion token, Google Drive OAuth, link thư mục cha và prompt vẫn được giữ lại." });
+  res.json({ success: true, message: "Đã xóa cache phiên sản phẩm. API Key, Notion token, Google Drive OAuth, link thư mục cha, link logo và prompt vẫn được giữ lại." });
 });
 
 // Test OpenAI API Key
@@ -1045,7 +1067,7 @@ async function findCoordinationPageByTitle(notion, productName) {
 
 // Generate single image on-demand using Playwright
 app.post("/api/chrome/generate-single-image", async (req, res) => {
-  const { productName, driveParent, driveUrl: suppliedDriveUrl, promptIndex, promptText, details, content, referenceImage } = req.body;
+  const { productName, driveParent, driveUrl: suppliedDriveUrl, promptIndex, promptText, details, content, referenceImage, logoImageUrl } = req.body;
   if (!productName) {
     return res.status(400).json({ error: "Thiếu tên sản phẩm." });
   }
@@ -1083,6 +1105,14 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
       addLog(`[Image ${promptIndex}] Continuing the current chat with text only; the product image is not uploaded again.`, "info");
     }
 
+    const effectiveLogoUrl = String(logoImageUrl || config.logoImageUrl || "").trim();
+    let logoImagePath = null;
+    if (effectiveLogoUrl) {
+      addLog(`[Ảnh ${promptIndex}] Đang tải logo thương hiệu từ Google Drive...`, "info");
+      logoImagePath = await downloadGoogleDriveLogo(effectiveLogoUrl, targetFolder);
+      addLog(`[Ảnh ${promptIndex}] Đã chuẩn bị logo để gắn ở góc trên bên phải.`, "success");
+    }
+
     // Get Drive ID
     addLog(`[Ảnh ${promptIndex}] Đang lấy Google Drive ID...`, "info");
     const driveUrl = await resolveDriveFolderUrl(targetFolder, suppliedDriveUrl, productName);
@@ -1091,7 +1121,7 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
     }
 
     // Start background single image automation
-    runSingleImageAutomationInBackground(port, refImagePath, promptText, promptIndex, targetFolder, productName, driveUrl, details, content);
+    runSingleImageAutomationInBackground(port, refImagePath, logoImagePath, promptText, promptIndex, targetFolder, productName, driveUrl, details, content);
 
     res.json({
       success: true,
@@ -1107,7 +1137,7 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
 });
 
 // Run single image Playwright automation in background
-async function runSingleImageAutomationInBackground(port, refImagePath, promptText, promptIndex, targetFolder, productName, driveUrl, details, content) {
+async function runSingleImageAutomationInBackground(port, refImagePath, logoImagePath, promptText, promptIndex, targetFolder, productName, driveUrl, details, content) {
   addLog(`[Ảnh ${promptIndex}] Đang kết nối đến Chrome Debugging Port ${port}...`, "info");
   let browser;
   try {
@@ -1135,18 +1165,19 @@ async function runSingleImageAutomationInBackground(port, refImagePath, promptTe
 
     addLog(`[Ảnh ${promptIndex}] Đang chuẩn bị gửi Prompt: "${promptText.slice(0, 50)}..."`, "info");
 
-    // 1. Upload reference image if available (with robust try-catch)
-    if (refImagePath) {
-      addLog(`[Ảnh ${promptIndex}] Đang upload ảnh mẫu reference_image.png...`, "info");
+    // 1. Upload the product reference (Prompt 1 only) and the brand logo (all prompts).
+    const attachmentPaths = [refImagePath, logoImagePath].filter(Boolean);
+    if (attachmentPaths.length) {
+      addLog(`[Ảnh ${promptIndex}] Đang upload ${attachmentPaths.length} ảnh tham chiếu...`, "info");
       try {
-        const fileInput = await page.$('input[type="file"]');
-        if (fileInput) {
-          await fileInput.setInputFiles(refImagePath);
-          // Wait 5 seconds for upload to complete natively without polling CDP isEnabled()
-          await new Promise((r) => setTimeout(r, 5000));
+        for (const attachmentPath of attachmentPaths) {
+          const fileInput = await page.$('input[type="file"]');
+          if (!fileInput) throw new Error("Không tìm thấy ô upload file của ChatGPT.");
+          await fileInput.setInputFiles(attachmentPath);
+          await new Promise((r) => setTimeout(r, 4000));
         }
       } catch (err) {
-        addLog(`[Ảnh ${promptIndex}] Bỏ qua lỗi upload ảnh mẫu: ${err.message}`, "warning");
+        throw new Error(`Không thể upload ảnh tham chiếu/logo: ${err.message}`);
       }
     }
 
@@ -1179,6 +1210,9 @@ async function runSingleImageAutomationInBackground(port, refImagePath, promptTe
       .replace(/A1/g, "ảnh sản phẩm mẫu đã tải lên");
 
     promptProcessed += "\n\nYêu cầu bắt buộc về đầu ra: tạo ảnh vuông tỉ lệ 1:1 (square image), bố cục hiển thị trọn vẹn trong khung vuông, không tạo ảnh dọc hoặc ngang.";
+    if (logoImagePath) {
+      promptProcessed += "\n\nYêu cầu logo bắt buộc: file brand_logo đính kèm là logo thương hiệu chính thức. Phải đặt logo này ở phía trên cùng bên phải của ảnh kết quả, kích thước nhỏ vừa phải, cách mép an toàn và không che nội dung. Giữ nguyên hình dạng, chữ, màu sắc và tỷ lệ của logo; không vẽ lại, không đổi chữ, không biến dạng và không tạo thêm logo khác.";
+    }
 
     await page.focus("#prompt-textarea");
     
@@ -1232,7 +1266,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, promptTe
         addLog(`[Ảnh ${promptIndex}] Đã tìm thấy ảnh trong lượt trả lời mới của ChatGPT. Đang tải ảnh về máy...`, "info");
         try {
           const savedAs = await saveChatGptImage(context, image, src, imagePath);
-          if (await filesAreIdentical(refImagePath, imagePath)) {
+          if (await filesAreIdentical(refImagePath, imagePath) || await filesAreIdentical(logoImagePath, imagePath)) {
             await fs.unlink(imagePath).catch(() => {});
             addLog(`[Ảnh ${promptIndex}] Đã loại ảnh trùng với ảnh mẫu; tiếp tục chờ kết quả ChatGPT.`, "warning");
             continue;
