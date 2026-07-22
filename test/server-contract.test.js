@@ -72,3 +72,17 @@ test("Facebook preparation uses the Chờ đăng status", async () => {
   const serverSource = await fs.readFile(path.resolve(__dirname, "..", "server.js"), "utf8");
   assert.match(serverSource, /Facebook:\s*\{\s*select:\s*\{\s*name:\s*"Chờ đăng"/);
 });
+
+test("Notion website sync marks Facebook as Chưa đăng for create and update", async () => {
+  const serverSource = await fs.readFile(path.resolve(__dirname, "..", "server.js"), "utf8");
+  const routeStart = serverSource.indexOf('app.post("/api/notion/sync"');
+  const routeEnd = serverSource.indexOf("// Start Server", routeStart);
+  assert.notEqual(routeStart, -1);
+  assert.notEqual(routeEnd, -1);
+  const notionSyncSource = serverSource.slice(routeStart, routeEnd);
+  const pendingFacebookProperties = notionSyncSource.match(
+    /"Facebook":\s*\{\s*select:\s*\{\s*name:\s*"Chưa đăng"/g
+  ) || [];
+
+  assert.equal(pendingFacebookProperties.length, 2);
+});

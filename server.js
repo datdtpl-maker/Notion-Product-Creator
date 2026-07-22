@@ -1567,6 +1567,11 @@ app.post("/api/notion/sync", async (req, res) => {
               name: "Báo IT đăng"
             }
           },
+          "Facebook": {
+            select: {
+              name: "Chưa đăng"
+            }
+          },
           "Content xong": {
             checkbox: true
           }
@@ -1605,6 +1610,11 @@ app.post("/api/notion/sync", async (req, res) => {
           "Trạng thái": {
             select: {
               name: "Báo IT đăng"
+            }
+          },
+          "Facebook": {
+            select: {
+              name: "Chưa đăng"
             }
           },
           "Content xong": {
