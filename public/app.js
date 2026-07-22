@@ -17,6 +17,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const logoImageUrlInput = document.getElementById("logo-image-url");
   const btnSaveLogoImageUrl = document.getElementById("btn-save-logo-image-url");
   const btnClearProductCache = document.getElementById("btn-clear-product-cache");
+  const systemConfigCard = document.getElementById("system-config-card");
+  const systemConfigBody = document.getElementById("system-config-body");
+  const btnToggleSystemConfig = document.getElementById("btn-toggle-system-config");
+  const systemConfigToggleLabel = document.getElementById("system-config-toggle-label");
   
   const prodNameInput = document.getElementById("prod-name");
   const prodCategoryInput = document.getElementById("prod-category");
@@ -111,6 +115,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     completionModal.hidden = false;
     btnCloseCompletion.focus();
+  }
+
+  function setSystemConfigCollapsed(collapsed, { persist = true } = {}) {
+    systemConfigCard.classList.toggle("is-collapsed", collapsed);
+    systemConfigBody.hidden = collapsed;
+    btnToggleSystemConfig.setAttribute("aria-expanded", String(!collapsed));
+    btnToggleSystemConfig.setAttribute("aria-label", collapsed ? "Mở rộng Cấu hình hệ thống" : "Thu nhỏ Cấu hình hệ thống");
+    systemConfigToggleLabel.textContent = collapsed ? "Mở rộng" : "Thu nhỏ";
+    if (persist) localStorage.setItem("systemConfigCollapsed", String(collapsed));
+  }
+
+  function setupSystemConfigToggle() {
+    const collapsed = localStorage.getItem("systemConfigCollapsed") === "true";
+    setSystemConfigCollapsed(collapsed, { persist: false });
+    btnToggleSystemConfig.addEventListener("click", () => {
+      setSystemConfigCollapsed(!systemConfigCard.classList.contains("is-collapsed"));
+    });
   }
 
   btnCloseCompletion.addEventListener("click", closeCompletionPopup);
@@ -1100,6 +1121,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupCollapsiblePrompts();
   setupTextareaExpander();
   setupThemeToggle();
+  setupSystemConfigToggle();
 
   // Disable spellcheck globally to remove wavy red underlines
   document.querySelectorAll("input, textarea").forEach(el => {

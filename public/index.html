@@ -41,11 +41,17 @@
     <main class="app-main">
       <!-- Left Column: Input Form & Settings -->
       <section class="workspace-section col-left">
-        <div class="card glass">
-          <div class="card-header">
+        <div id="system-config-card" class="card glass system-config-card">
+          <div class="card-header flex-row justify-between">
             <h3>⚙️ Cấu hình hệ thống</h3>
+            <button id="btn-toggle-system-config" type="button" class="btn secondary system-config-toggle" aria-expanded="true" aria-controls="system-config-body">
+              <span id="system-config-toggle-label">Thu nhỏ</span>
+              <svg class="system-config-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m6 15 6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </div>
-          <div class="card-body">
+          <div id="system-config-body" class="card-body">
             <div class="api-credentials">
               <div class="key-field">
                 <label for="openai-key">OpenAI API Key</label>

@@ -264,6 +264,35 @@ body.light-mode .status-badge {
   color: var(--text);
 }
 
+.system-config-toggle {
+  min-height: 44px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.system-config-chevron {
+  flex: 0 0 auto;
+  transition: transform 200ms ease;
+}
+
+.system-config-card.is-collapsed .card-header {
+  border-bottom-color: transparent;
+}
+
+.system-config-card.is-collapsed .system-config-chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .system-config-chevron {
+    transition: none;
+  }
+}
+
 .card-body {
   padding: 20px;
   overflow-y: auto !important;

@@ -128,3 +128,20 @@ test("Website UI saves and sends the logo link for all four image prompts", asyn
   assert.match(serverSource, /mép trên ảnh khoảng 5-7%/);
   assert.match(serverSource, /Tuyệt đối không để logo chồng lên tiêu đề, chữ/);
 });
+
+test("System configuration card can collapse and remembers its state", async () => {
+  const root = path.resolve(__dirname, "..");
+  const [appSource, htmlSource, cssSource] = await Promise.all([
+    fs.readFile(path.join(root, "public", "app.js"), "utf8"),
+    fs.readFile(path.join(root, "public", "index.html"), "utf8"),
+    fs.readFile(path.join(root, "public", "styles.css"), "utf8")
+  ]);
+
+  assert.match(htmlSource, /id="btn-toggle-system-config"[^>]+aria-expanded="true"[^>]+aria-controls="system-config-body"/);
+  assert.match(appSource, /function setSystemConfigCollapsed/);
+  assert.match(appSource, /localStorage\.setItem\("systemConfigCollapsed"/);
+  assert.match(appSource, /systemConfigBody\.hidden = collapsed/);
+  assert.match(cssSource, /\.system-config-card\.is-collapsed \.system-config-chevron/);
+  assert.match(cssSource, /\.system-config-toggle\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(cssSource, /@media \(prefers-reduced-motion: reduce\)/);
+});
