@@ -1258,8 +1258,8 @@ async function runSingleImageAutomationInBackground(port, refImagePath, promptTe
       }
 
       // 5. Only after all four generated images exist, update Notion to
-      // "Content đang làm". The manual Push to Notion action is the only path
-      // that changes the status to "Báo IT đăng" and checks "Content xong".
+      // "Content đang làm". The manual Push to Notion action also keeps this
+      // status while checking "Content xong", so Content can revise the images.
       try {
         const coordinationDbId = "9788b8a0-31cc-42d3-91be-4e26d6b8c8e8";
         const notion = await getNotionClient();
@@ -1541,7 +1541,7 @@ app.post("/api/notion/sync", async (req, res) => {
     
     let coordinationPageId;
     if (existingPage) {
-      addLog(`Tìm thấy trang điều phối hiện tại (ID: ${existingPage.id}). Đang cập nhật trạng thái "Báo IT đăng"...`, "info");
+      addLog(`Tìm thấy trang điều phối hiện tại (ID: ${existingPage.id}). Đang cập nhật trạng thái "Content đang làm"...`, "info");
       const updatedPage = await notion.pages.update({
         page_id: existingPage.id,
         properties: {
@@ -1564,7 +1564,7 @@ app.post("/api/notion/sync", async (req, res) => {
           },
           "Trạng thái": {
             select: {
-              name: "Báo IT đăng"
+              name: "Content đang làm"
             }
           },
           "Facebook": {
@@ -1579,7 +1579,7 @@ app.post("/api/notion/sync", async (req, res) => {
       });
       coordinationPageId = updatedPage.id;
     } else {
-      addLog(`Không tìm thấy trang sẵn có. Đang tạo trang điều phối mới với trạng thái "Báo IT đăng"...`, "info");
+      addLog(`Không tìm thấy trang sẵn có. Đang tạo trang điều phối mới với trạng thái "Content đang làm"...`, "info");
       const createdPage = await notion.pages.create({
         parent: { data_source_id: coordinationDataSourceId },
         properties: {
@@ -1609,7 +1609,7 @@ app.post("/api/notion/sync", async (req, res) => {
           },
           "Trạng thái": {
             select: {
-              name: "Báo IT đăng"
+              name: "Content đang làm"
             }
           },
           "Facebook": {

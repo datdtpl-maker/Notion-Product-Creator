@@ -83,6 +83,23 @@ test("Notion website sync marks Facebook as Chưa đăng for create and update",
   const pendingFacebookProperties = notionSyncSource.match(
     /"Facebook":\s*\{\s*select:\s*\{\s*name:\s*"Chưa đăng"/g
   ) || [];
+  const contentInProgressProperties = notionSyncSource.match(
+    /"Trạng thái":\s*\{\s*select:\s*\{\s*name:\s*"Content đang làm"/g
+  ) || [];
 
   assert.equal(pendingFacebookProperties.length, 2);
+  assert.equal(contentInProgressProperties.length, 2);
+  assert.doesNotMatch(notionSyncSource, /name:\s*"Báo IT đăng"/);
+});
+
+test("Website UI exposes an explicit persistent Google Drive parent link button", async () => {
+  const root = path.resolve(__dirname, "..");
+  const [appSource, htmlSource] = await Promise.all([
+    fs.readFile(path.join(root, "public", "app.js"), "utf8"),
+    fs.readFile(path.join(root, "public", "index.html"), "utf8")
+  ]);
+
+  assert.match(htmlSource, /id="btn-save-drive-parent-url"/);
+  assert.match(appSource, /btnSaveDriveParentUrl\.addEventListener\("click"/);
+  assert.match(appSource, /persistGoogleDriveParentUrl\(\{ silent: true \}\)/);
 });

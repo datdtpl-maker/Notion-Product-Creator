@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const driveParentInput = document.getElementById("drive-parent");
   const btnSelectFolder = document.getElementById("btn-select-folder");
   const productDriveUrlInput = document.getElementById("product-drive-url");
+  const btnSaveDriveParentUrl = document.getElementById("btn-save-drive-parent-url");
   const btnClearProductCache = document.getElementById("btn-clear-product-cache");
   
   const prodNameInput = document.getElementById("prod-name");
@@ -247,7 +248,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || "Không thể lưu link thư mục cha.");
     lastSavedGoogleDriveParentUrl = googleDriveParentUrl;
-    if (!silent) appendLocalLog("Đã tự động lưu link Google Drive thư mục cha trên máy này.", "success");
+    if (!silent) appendLocalLog("Đã lưu link Google Drive thư mục cha trên máy này.", "success");
   }
 
   async function refreshGoogleDriveStatus() {
@@ -603,6 +604,28 @@ document.addEventListener("DOMContentLoaded", () => {
     appendLocalLog(`Không thể lưu link thư mục cha: ${err.message}`, "error");
   }));
   productDriveUrlInput.addEventListener("blur", () => persistGoogleDriveParentUrl({ silent: true }).catch(() => {}));
+  btnSaveDriveParentUrl.addEventListener("click", async () => {
+    const originalLabel = btnSaveDriveParentUrl.textContent;
+    btnSaveDriveParentUrl.disabled = true;
+    btnSaveDriveParentUrl.textContent = "Đang lưu...";
+    try {
+      await persistGoogleDriveParentUrl({ silent: true });
+      appendLocalLog("Đã lưu link Google Drive thư mục cha trên máy này.", "success");
+      btnSaveDriveParentUrl.textContent = "✓ Đã lưu link thư mục cha";
+    } catch (err) {
+      appendLocalLog(`Không thể lưu link thư mục cha: ${err.message}`, "error");
+      alert(`Không thể lưu link thư mục cha: ${err.message}`);
+      btnSaveDriveParentUrl.textContent = originalLabel;
+      btnSaveDriveParentUrl.disabled = false;
+    } finally {
+      if (btnSaveDriveParentUrl.textContent.startsWith("✓")) {
+        setTimeout(() => {
+          btnSaveDriveParentUrl.textContent = originalLabel;
+          btnSaveDriveParentUrl.disabled = false;
+        }, 1800);
+      }
+    }
+  });
   window.addEventListener("beforeunload", () => {
     const googleDriveParentUrl = productDriveUrlInput.value.trim();
     if (googleDriveParentUrl === lastSavedGoogleDriveParentUrl) return;
@@ -863,7 +886,7 @@ document.addEventListener("DOMContentLoaded", () => {
     await saveConfig();
 
     try {
-      appendLocalLog("Đang đồng bộ bài viết và thiết lập trạng thái 'Báo IT đăng' trên Notion...", "info");
+      appendLocalLog("Đang đồng bộ bài viết và thiết lập trạng thái 'Content đang làm' trên Notion...", "info");
       const notionRes = await fetch("/api/notion/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
