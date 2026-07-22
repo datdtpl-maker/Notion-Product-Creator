@@ -1211,7 +1211,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
 
     promptProcessed += "\n\nYêu cầu bắt buộc về đầu ra: tạo ảnh vuông tỉ lệ 1:1 (square image), bố cục hiển thị trọn vẹn trong khung vuông, không tạo ảnh dọc hoặc ngang.";
     if (logoImagePath) {
-      promptProcessed += "\n\nYêu cầu logo bắt buộc: file brand_logo đính kèm là logo thương hiệu chính thức. Phải đặt logo này ở phía trên cùng bên phải của ảnh kết quả, kích thước nhỏ vừa phải, cách mép an toàn và không che nội dung. Giữ nguyên hình dạng, chữ, màu sắc và tỷ lệ của logo; không vẽ lại, không đổi chữ, không biến dạng và không tạo thêm logo khác.";
+      promptProcessed += "\n\nYêu cầu logo bắt buộc: file brand_logo đính kèm là logo thương hiệu chính thức. Đặt logo trong vùng phía trên bên phải nhưng dịch vào bên trái: mép phải của logo cách mép phải ảnh khoảng 7-9% chiều rộng, mép trên cách mép trên ảnh khoảng 5-7% chiều cao; chiều rộng logo khoảng 12-15% chiều rộng ảnh. Luôn chừa một vùng trống riêng cho logo. Tuyệt đối không để logo chồng lên tiêu đề, chữ, thông tin, biểu tượng quan trọng hoặc sản phẩm. Nếu vùng đặt logo đang có chữ, phải sắp xếp chữ sang trái hoặc xuống dưới để logo và toàn bộ nội dung đều dễ đọc. Giữ nguyên hình dạng, chữ, màu sắc và tỷ lệ của logo; không vẽ lại, không đổi chữ, không biến dạng và không tạo thêm logo khác.";
     }
 
     await page.focus("#prompt-textarea");

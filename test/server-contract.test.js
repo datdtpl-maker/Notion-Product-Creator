@@ -124,5 +124,7 @@ test("Website UI saves and sends the logo link for all four image prompts", asyn
   assert.match(htmlSource, /id="btn-save-logo-image-url"/);
   assert.match(appSource, /logoImageUrl:\s*logoImageUrlInput\.value\.trim\(\)/);
   assert.match(serverSource, /downloadGoogleDriveLogo\(effectiveLogoUrl, targetFolder\)/);
-  assert.match(serverSource, /phía trên cùng bên phải/);
+  assert.match(serverSource, /mép phải ảnh khoảng 7-9%/);
+  assert.match(serverSource, /mép trên ảnh khoảng 5-7%/);
+  assert.match(serverSource, /Tuyệt đối không để logo chồng lên tiêu đề, chữ/);
 });
