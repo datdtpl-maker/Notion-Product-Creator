@@ -1,4 +1,4 @@
-name: Build macOS installer
+name: Build and release installers
 
 on:
   workflow_dispatch:
@@ -7,9 +7,37 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Windows installer
+        run: npm run electron-build
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Notion-Product-Creator-Windows-${{ github.ref_name }}
+          path: dist-electron/*.exe
+          if-no-files-found: error
+
   build-macos:
     runs-on: macos-latest
     steps:
@@ -24,6 +52,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run tests
+        run: npm test
 
       - name: Configure optional Apple signing
         env:
@@ -52,3 +83,45 @@ jobs:
           name: Notion-Product-Creator-macOS-${{ github.ref_name }}
           path: dist-electron/*.dmg
           if-no-files-found: error
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Notion-Product-Creator-Windows-${{ github.ref_name }}
+          path: release-assets/windows
+
+      - name: Download macOS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Notion-Product-Creator-macOS-${{ github.ref_name }}
+          path: release-assets/macos
+
+      - name: Normalize installer names
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          WINDOWS_FILE="$(find release-assets/windows -type f -name '*.exe' | head -n 1)"
+          MACOS_FILE="$(find release-assets/macos -type f -name '*.dmg' | head -n 1)"
+          test -n "$WINDOWS_FILE"
+          test -n "$MACOS_FILE"
+          cp "$WINDOWS_FILE" "release-assets/Notion.Product.Creator.Setup.${VERSION}.exe"
+          cp "$MACOS_FILE" "release-assets/Notion.Product.Creator.${VERSION}.Universal.dmg"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "release-assets/Notion.Product.Creator.Setup.${VERSION}.exe" \
+            "release-assets/Notion.Product.Creator.${VERSION}.Universal.dmg" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Notion Product Creator ${GITHUB_REF_NAME}" \
+            --notes "Tự động đặt trạng thái Facebook thành Chưa đăng khi đẩy bài website lên Notion."
