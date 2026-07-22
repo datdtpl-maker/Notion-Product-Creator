@@ -18,7 +18,7 @@ const { Client: NotionClient } = require("@notionhq/client");
 const OpenAI = require("openai");
 const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
-const { selectNewAssistantImage } = require("./lib/chatgpt-generated-image");
+const { inferConversationTurnRole, selectNewAssistantImage } = require("./lib/chatgpt-generated-image");
 const { createConfigStore, redactConfig } = require("./lib/config-store");
 const { listFacebookProductsByStatus, markFacebookProductsAsPublished } = require("./lib/facebook-status");
 const { listNumberedImages, resolveProductImageFolder } = require("./lib/product-image-folder");
@@ -258,11 +258,12 @@ async function collectReadyImages(container) {
   for (let index = 0; index < count; index++) {
     const image = images.nth(index);
     const src = await image.getAttribute("src");
+    const alt = await image.getAttribute("alt") || "";
     if (!isChatGptContentImageSource(src)) continue;
     const isReady = await image.evaluate((element) => (
       element.complete && element.naturalWidth >= 256 && element.naturalHeight >= 256
     )).catch(() => false);
-    if (isReady) readyImages.push({ image, src });
+    if (isReady) readyImages.push({ image, src, alt });
   }
   return readyImages;
 }
@@ -275,13 +276,17 @@ async function getChatGptConversationTurns(page) {
   for (let index = 0; index < count; index++) {
     const turn = turns.nth(index);
     const testId = await turn.getAttribute("data-testid");
-    let authorRole = await turn.getAttribute("data-message-author-role");
-    if (!authorRole && await turn.locator('[data-message-author-role="assistant"]').count()) authorRole = "assistant";
-    if (!authorRole && await turn.locator('[data-message-author-role="user"]').count()) authorRole = "user";
+    const images = await collectReadyImages(turn);
+    const authorRole = inferConversationTurnRole({
+      ownRole: await turn.getAttribute("data-message-author-role"),
+      userMarkerCount: await turn.locator('[data-message-author-role="user"]').count(),
+      assistantMarkerCount: await turn.locator('[data-message-author-role="assistant"]').count(),
+      readyImageCount: images.length
+    });
     result.push({
       turnKey: testId || `conversation-turn-${index}`,
       authorRole,
-      images: await collectReadyImages(turn)
+      images
     });
   }
 
