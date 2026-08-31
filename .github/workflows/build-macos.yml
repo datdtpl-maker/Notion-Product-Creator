@@ -124,4 +124,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Tự động đặt trạng thái Facebook thành Chưa đăng khi đẩy bài website lên Notion."
+            --notes "Sửa luồng đăng Facebook: tự chuyển sang danh tính Page trước khi mở khung tạo bài và hiển thị lỗi rõ ràng khi tài khoản chưa có quyền quản trị Page."

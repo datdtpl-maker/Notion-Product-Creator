@@ -20,6 +20,7 @@ const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
 const { inferConversationTurnRole, selectNewAssistantImage } = require("./lib/chatgpt-generated-image");
 const { createConfigStore, redactConfig } = require("./lib/config-store");
+const { ensureFacebookPageComposer } = require("./lib/facebook-composer");
 const { listFacebookProductsByStatus, markFacebookProductsAsPublished } = require("./lib/facebook-status");
 const { listNumberedImages, resolveProductImageFolder } = require("./lib/product-image-folder");
 const { getGoogleDriveFileId, downloadGoogleDriveLogo } = require("./lib/logo-image");
@@ -1448,8 +1449,9 @@ app.post("/api/facebook/publish", async (req, res) => {
     browser = await chromium.connectOverCDP(`http://localhost:${config.facebookDebugPort || 9223}`);
     const context = browser.contexts()[0]; const page = context.pages()[0] || await context.newPage();
     await page.goto(config.facebookPageUrl, { waitUntil: "domcontentloaded" });
-    const composer = page.locator('div[role="button"]').filter({ hasText: /Bạn đang nghĩ gì|What.?s on your mind|Tạo bài viết/i }).first();
-    await composer.waitFor({ timeout: 30000 }); await composer.click();
+    const { composer, switched } = await ensureFacebookPageComposer(page);
+    if (switched) addLog("Facebook đang ở danh tính cá nhân; tool đã tự chuyển sang danh tính Page.", "success");
+    await composer.click();
     const dialog = page.locator('[role="dialog"]').last();
     // Facebook currently renders the composer editor outside the dialog subtree.
     // The comment box has an aria-label, while the post composer does not.
@@ -1493,7 +1495,10 @@ app.post("/api/facebook/publish", async (req, res) => {
       facebookContentPageUrl: facebookContentPage.url,
       message: "Đã đưa nội dung và ảnh vào form Facebook, lưu bài vào Notion và chuyển trạng thái thành Chờ đăng."
     });
-  } catch (err) { res.status(err.code === "PRODUCT_IMAGE_FOLDER_NOT_FOUND" ? 400 : 500).json({ error: err.message }); }
+  } catch (err) {
+    const isUserActionError = ["PRODUCT_IMAGE_FOLDER_NOT_FOUND", "FACEBOOK_COMPOSER_NOT_FOUND"].includes(err.code);
+    res.status(isUserActionError ? 400 : 500).json({ error: err.message });
+  }
   finally { if (browser) await browser.close(); }
 });
 
