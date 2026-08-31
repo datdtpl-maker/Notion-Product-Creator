@@ -21,6 +21,11 @@ const nodeCrypto = require("crypto");
 const { inferConversationTurnRole, selectNewAssistantImage } = require("./lib/chatgpt-generated-image");
 const { createConfigStore, redactConfig } = require("./lib/config-store");
 const { ensureFacebookPageComposer } = require("./lib/facebook-composer");
+const {
+  DEFAULT_FACEBOOK_PROMPT,
+  normalizeFacebookPromptLibrary,
+  resolveFacebookPrompt
+} = require("./lib/facebook-prompt-library");
 const { listFacebookProductsByStatus, markFacebookProductsAsPublished } = require("./lib/facebook-status");
 const { listNumberedImages, resolveProductImageFolder } = require("./lib/product-image-folder");
 const { getGoogleDriveFileId, downloadGoogleDriveLogo } = require("./lib/logo-image");
@@ -85,6 +90,11 @@ const CONFIG_DEFAULTS = {
   googleDriveTokenExpiry: 0,
   chromeDebugPort: 9222,
   chromeUserDataDir: path.join(configDir, "chatgpt_profile"),
+  facebookPageUrl: "",
+  facebookMediaParent: "",
+  facebookTemplate: "",
+  facebookPrompts: [{ ...DEFAULT_FACEBOOK_PROMPT }],
+  selectedFacebookPromptId: DEFAULT_FACEBOOK_PROMPT.id,
   prompts: []
 };
 
@@ -372,6 +382,13 @@ async function loadConfig() {
     });
   }
 
+  const facebookPromptLibrary = normalizeFacebookPromptLibrary(
+    cfg.facebookPrompts,
+    cfg.selectedFacebookPromptId
+  );
+  cfg.facebookPrompts = facebookPromptLibrary.prompts;
+  cfg.selectedFacebookPromptId = facebookPromptLibrary.selectedPromptId;
+
   return cfg;
 }
 
@@ -516,6 +533,14 @@ app.post("/api/config", async (req, res) => {
       next.openAiApiKey = submittedOpenAiKey || cfg.openAiApiKey;
       next.notionApiKey = submittedNotionKey || cfg.notionApiKey;
       next.googleDriveClientSecret = submittedClientSecret || (clientIdChanged ? "" : cfg.googleDriveClientSecret);
+      const facebookPromptLibrary = normalizeFacebookPromptLibrary(
+        Object.prototype.hasOwnProperty.call(newCfg, "facebookPrompts") ? newCfg.facebookPrompts : cfg.facebookPrompts,
+        Object.prototype.hasOwnProperty.call(newCfg, "selectedFacebookPromptId")
+          ? newCfg.selectedFacebookPromptId
+          : cfg.selectedFacebookPromptId
+      );
+      next.facebookPrompts = facebookPromptLibrary.prompts;
+      next.selectedFacebookPromptId = facebookPromptLibrary.selectedPromptId;
       if (clientIdChanged) {
         next.googleDriveAccessToken = "";
         next.googleDriveRefreshToken = "";
@@ -1428,13 +1453,18 @@ app.get("/api/facebook/product", async (req, res) => {
 
 app.post("/api/facebook/generate-content", async (req, res) => {
   try {
-    const { productName, webUrl, template } = req.body;
+    const { productName, webUrl, template, prompt } = req.body;
     const config = await loadConfig();
     if (!config.openAiApiKey) return res.status(400).json({ error: "Chưa cấu hình OpenAI API Key." });
+    const effectivePrompt = resolveFacebookPrompt({
+      requestPrompt: prompt,
+      prompts: config.facebookPrompts,
+      selectedPromptId: config.selectedFacebookPromptId
+    });
     const openai = new OpenAI({ apiKey: config.openAiApiKey });
-    const response = await openai.chat.completions.create({ model: "gpt-4o-mini", temperature: 0.8, messages: [{ role: "system", content: "Bạn viết bài Facebook ngắn gọn cho Khải Hoàn Skincare. Không bịa công dụng, dùng ngôn từ an toàn. Trả về duy nhất nội dung bài đăng, có CTA và link web cuối bài." }, { role: "user", content: `Sản phẩm: ${productName}\nLink web: ${webUrl || "chưa có"}\nMẫu tham khảo:\n${template || "Không có mẫu; hãy viết bài bán hàng ngắn gọn, dễ đọc."}` }] });
+    const response = await openai.chat.completions.create({ model: "gpt-4o-mini", temperature: 0.8, messages: [{ role: "system", content: effectivePrompt }, { role: "user", content: `Sản phẩm: ${productName}\nLink web: ${webUrl || "chưa có"}\nMẫu tham khảo:\n${template || "Không có mẫu tham khảo."}` }] });
     res.json({ content: response.choices[0].message.content.trim() });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.code === "FACEBOOK_PROMPT_TOO_LONG" ? 400 : 500).json({ error: err.message }); }
 });
 
 app.post("/api/facebook/publish", async (req, res) => {

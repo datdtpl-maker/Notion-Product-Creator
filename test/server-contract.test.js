@@ -74,6 +74,9 @@ test("local config API redacts secrets and product cache keeps the parent URL", 
   assert.equal(config.notionApiKey, undefined);
   assert.equal(config.openAiApiKeyConfigured, true);
   assert.equal(config.notionApiKeyConfigured, true);
+  assert.equal(config.facebookPrompts.length, 1);
+  assert.equal(config.facebookPrompts[0].name, "Prompt mặc định Khải Hoàn");
+  assert.equal(config.selectedFacebookPromptId, config.facebookPrompts[0].id);
 });
 
 test("Facebook preparation uses the Chờ đăng status", async () => {

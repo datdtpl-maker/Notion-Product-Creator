@@ -19,6 +19,10 @@
 
   --danger: #ef4444;
   --warning: #f59e0b;
+  --danger-button: #dc2626;
+  --danger-text: #f87171;
+  --warning-text: #fbbf24;
+  --success-text: #34d399;
   
   --input-bg: rgba(0, 0, 0, 0.25);
   --font-sans: 'Be Vietnam Pro', 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -46,6 +50,9 @@ body.light-mode {
   
   --input-bg: rgba(255, 255, 255, 0.95);
   --surface-border: rgba(0, 0, 0, 0.1);
+  --danger-text: #b91c1c;
+  --warning-text: #92400e;
+  --success-text: #047857;
   
   --log-bg: #ffffff;
   --log-text: #27272a;
@@ -202,8 +209,8 @@ body.light-mode .status-badge {
 .product-tab.active { background:var(--primary); color:white; border-color:var(--primary); }
 .product-panel[hidden] { display:none; }
 .facebook-workspace { display:grid; grid-template-columns:360px 1fr 320px; gap:20px; padding:20px; height:calc(100vh - 122px); }
-.facebook-column { display:flex; flex-direction:column; min-height:0; }
-.facebook-product-info { padding:12px; border:1px solid var(--surface-border); border-radius:10px; color:var(--text-muted); background:var(--input-bg); font-size:13px; line-height:1.6; }
+.facebook-column { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.facebook-product-info { padding:12px; border:1px solid var(--surface-border); border-radius:10px; color:var(--text-muted); background:var(--input-bg); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
 .pending-products-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:8px; }
 .pending-products-heading label { margin-bottom:0; }
 .pending-products-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
@@ -214,7 +221,7 @@ body.light-mode .status-badge {
 .facebook-pending-product input { accent-color:var(--primary); flex:0 0 auto; }
 .facebook-actions { display:flex; gap:12px; }
 .facebook-actions .btn { flex:1; }
-@media (max-width: 1000px) { .facebook-workspace { grid-template-columns:1fr; height:auto; } .facebook-log-column { min-height:260px; } }
+@media (max-width: 1000px) { .facebook-workspace { grid-template-columns:minmax(0, 1fr); height:auto; } .facebook-log-column { min-height:260px; } }
 
 .workspace-section {
   display: flex;
@@ -338,6 +345,8 @@ label {
 
 input[type="text"],
 input[type="password"],
+input[type="url"],
+select,
 textarea {
   width: 100%;
   padding: 10px 14px;
@@ -352,6 +361,8 @@ textarea {
 
 input[type="text"]:focus,
 input[type="password"]:focus,
+input[type="url"]:focus,
+select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--primary);
@@ -433,6 +444,16 @@ textarea:focus {
   box-shadow: 0 0 16px var(--accent-glow);
 }
 
+.btn.danger {
+  color: #fff;
+  background: var(--danger-button);
+}
+
+.btn.danger:hover:not(:disabled) {
+  filter: brightness(0.92);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.2);
+}
+
 .btn.big-btn {
   padding: 14px 24px;
   font-size: 14px;
@@ -464,6 +485,142 @@ textarea:focus {
   font-size: 12.5px;
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+.facebook-prompt-manager {
+  padding: 16px;
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--input-bg) 82%, transparent);
+}
+
+.facebook-prompt-manager-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.facebook-prompt-manager-header h4 {
+  margin-bottom: 5px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.facebook-prompt-status {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 999px;
+  color: var(--success-text);
+  background: rgba(16, 185, 129, 0.1);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.facebook-prompt-status[data-state="dirty"] {
+  color: var(--warning-text);
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.facebook-prompt-status[data-state="error"] {
+  color: var(--danger-text);
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.facebook-prompt-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.facebook-prompt-select-group {
+  min-width: 0;
+}
+
+.facebook-prompt-picker .btn,
+.facebook-prompt-actions .btn {
+  min-height: 44px;
+}
+
+.facebook-prompt-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.facebook-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#facebook-prompt-content {
+  min-height: 138px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+@media (max-width: 700px) {
+  .app-header {
+    height: auto;
+    padding: 12px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .status-indicators {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .product-tabs {
+    flex-wrap: wrap;
+    padding-inline: 12px;
+  }
+
+  .product-tab {
+    flex: 1 1 100%;
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .facebook-workspace {
+    padding: 12px;
+  }
+
+  .facebook-prompt-manager-header,
+  .facebook-prompt-meta {
+    flex-direction: column;
+  }
+
+  .facebook-prompt-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .facebook-prompt-actions .btn {
+    flex: 1 1 calc(50% - 8px);
+    white-space: normal;
+  }
+
+  .facebook-actions {
+    flex-direction: column;
+  }
+
+  .facebook-actions .btn {
+    width: 100%;
+    min-height: 44px;
+    white-space: normal;
+  }
 }
 
 /* Image Dropzone */

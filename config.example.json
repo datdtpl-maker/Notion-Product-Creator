@@ -7,6 +7,14 @@
   "facebookPageUrl": "",
   "facebookMediaParent": "",
   "facebookTemplate": "",
+  "facebookPrompts": [
+    {
+      "id": "khai-hoan-default",
+      "name": "Prompt mặc định Khải Hoàn",
+      "content": "Bạn viết bài Facebook ngắn gọn cho Khải Hoàn Skincare. Không bịa công dụng, dùng ngôn từ an toàn. Trả về duy nhất nội dung bài đăng, có CTA và link web cuối bài."
+    }
+  ],
+  "selectedFacebookPromptId": "khai-hoan-default",
   "chromeDebugPort": 9222,
   "facebookDebugPort": 9223,
   "prompts": []

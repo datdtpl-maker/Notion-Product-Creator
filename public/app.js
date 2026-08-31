@@ -76,6 +76,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const facebookMediaParentInput = document.getElementById("facebook-media-parent");
   const btnSelectFacebookMedia = document.getElementById("btn-select-facebook-media");
   const facebookTemplateInput = document.getElementById("facebook-template");
+  const facebookPromptSelect = document.getElementById("facebook-prompt-select");
+  const facebookPromptNameInput = document.getElementById("facebook-prompt-name");
+  const facebookPromptContentInput = document.getElementById("facebook-prompt-content");
+  const facebookPromptStatus = document.getElementById("facebook-prompt-status");
+  const facebookPromptCounter = document.getElementById("facebook-prompt-counter");
+  const btnAddFacebookPrompt = document.getElementById("btn-add-facebook-prompt");
+  const btnSaveFacebookPrompt = document.getElementById("btn-save-facebook-prompt");
+  const btnDeleteFacebookPrompt = document.getElementById("btn-delete-facebook-prompt");
+  const btnExportFacebookPrompts = document.getElementById("btn-export-facebook-prompts");
+  const btnImportFacebookPrompts = document.getElementById("btn-import-facebook-prompts");
+  const facebookPromptsImportFile = document.getElementById("facebook-prompts-import-file");
   const facebookPendingProducts = document.getElementById("facebook-pending-products");
   const btnRefreshFacebookProducts = document.getElementById("btn-refresh-facebook-products");
   const btnConfirmFacebookPublished = document.getElementById("btn-confirm-facebook-published");
@@ -98,6 +109,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let googleDriveClientSecretConfigured = false;
   let productDriveUrlSaveTimer = null;
   let lastSavedGoogleDriveParentUrl = "";
+  let facebookPrompts = [];
+  let selectedFacebookPromptId = "";
+
+  const defaultFacebookPrompt = {
+    id: "khai-hoan-default",
+    name: "Prompt mặc định Khải Hoàn",
+    content: "Bạn viết bài Facebook ngắn gọn cho Khải Hoàn Skincare. Không bịa công dụng, dùng ngôn từ an toàn. Trả về duy nhất nội dung bài đăng, có CTA và link web cuối bài."
+  };
 
   // --- Functions ---
 
@@ -115,6 +134,89 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     completionModal.hidden = false;
     btnCloseCompletion.focus();
+  }
+
+  function setFacebookPromptStatus(message, state = "saved") {
+    facebookPromptStatus.textContent = message;
+    facebookPromptStatus.dataset.state = state;
+  }
+
+  function updateFacebookPromptCounter() {
+    facebookPromptCounter.textContent = `${facebookPromptContentInput.value.length.toLocaleString("vi-VN")} / 20.000`;
+  }
+
+  function getSelectedFacebookPrompt() {
+    return facebookPrompts.find((prompt) => prompt.id === selectedFacebookPromptId) || facebookPrompts[0] || null;
+  }
+
+  function createFacebookPromptId() {
+    if (window.crypto?.randomUUID) return `facebook-${window.crypto.randomUUID()}`;
+    return `facebook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function renderFacebookPromptOptions() {
+    facebookPromptSelect.innerHTML = "";
+    for (const prompt of facebookPrompts) {
+      const option = document.createElement("option");
+      option.value = prompt.id;
+      option.textContent = prompt.name;
+      facebookPromptSelect.appendChild(option);
+    }
+    facebookPromptSelect.value = selectedFacebookPromptId;
+  }
+
+  function loadSelectedFacebookPromptIntoEditor() {
+    const prompt = getSelectedFacebookPrompt();
+    facebookPromptNameInput.value = prompt?.name || "";
+    facebookPromptContentInput.value = prompt?.content || "";
+    facebookPromptSelect.value = prompt?.id || "";
+    updateFacebookPromptCounter();
+  }
+
+  function syncFacebookPromptEditorToState() {
+    const prompt = getSelectedFacebookPrompt();
+    if (!prompt) return;
+    prompt.name = facebookPromptNameInput.value.slice(0, 120);
+    prompt.content = facebookPromptContentInput.value.slice(0, 20000);
+    const selectedOption = facebookPromptSelect.querySelector(`option[value="${CSS.escape(prompt.id)}"]`);
+    if (selectedOption) selectedOption.textContent = prompt.name.trim() || "Prompt chưa đặt tên";
+    updateFacebookPromptCounter();
+  }
+
+  function validateFacebookPromptLibrary(prompts = facebookPrompts) {
+    if (!Array.isArray(prompts) || prompts.length === 0) throw new Error("Thư viện cần có ít nhất một prompt.");
+    if (prompts.length > 50) throw new Error("Thư viện chỉ hỗ trợ tối đa 50 prompt.");
+    for (const [index, prompt] of prompts.entries()) {
+      if (!String(prompt.name || "").trim()) throw new Error(`Prompt ${index + 1} chưa có tên.`);
+      if (!String(prompt.content || "").trim()) throw new Error(`Prompt “${prompt.name || index + 1}” chưa có nội dung.`);
+      if (String(prompt.content).length > 20000) throw new Error(`Prompt “${prompt.name}” vượt quá 20.000 ký tự.`);
+    }
+  }
+
+  function normalizeImportedFacebookPrompts(rawPrompts) {
+    if (!Array.isArray(rawPrompts)) throw new Error("File không chứa danh sách prompt hợp lệ.");
+    const usedIds = new Set();
+    const prompts = rawPrompts.slice(0, 50).map((item, index) => {
+      const name = String(item?.name || "").trim().slice(0, 120);
+      const content = String(item?.content || "").trim().slice(0, 20000);
+      let id = String(item?.id || createFacebookPromptId()).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
+      if (!id) id = `facebook-import-${index + 1}`;
+      const baseId = id;
+      let suffix = 2;
+      while (usedIds.has(id)) id = `${baseId}-${suffix++}`;
+      usedIds.add(id);
+      return { id, name, content };
+    });
+    validateFacebookPromptLibrary(prompts);
+    return prompts;
+  }
+
+  async function persistFacebookPromptLibrary(message = "Đã lưu thư viện prompt trên máy này.") {
+    syncFacebookPromptEditorToState();
+    validateFacebookPromptLibrary();
+    await saveConfig();
+    setFacebookPromptStatus("Đã lưu", "saved");
+    appendLocalLog(message, "success");
   }
 
   function setSystemConfigCollapsed(collapsed, { persist = true } = {}) {
@@ -184,6 +286,15 @@ document.addEventListener("DOMContentLoaded", () => {
       facebookPageUrlInput.value = config.facebookPageUrl || "";
       facebookMediaParentInput.value = config.facebookMediaParent || config.defaultDriveParent || "";
       facebookTemplateInput.value = config.facebookTemplate || "";
+      facebookPrompts = Array.isArray(config.facebookPrompts) && config.facebookPrompts.length
+        ? config.facebookPrompts.map((prompt) => ({ ...prompt }))
+        : [{ ...defaultFacebookPrompt }];
+      selectedFacebookPromptId = facebookPrompts.some((prompt) => prompt.id === config.selectedFacebookPromptId)
+        ? config.selectedFacebookPromptId
+        : facebookPrompts[0].id;
+      renderFacebookPromptOptions();
+      loadSelectedFacebookPromptIntoEditor();
+      setFacebookPromptStatus("Đã lưu", "saved");
       
       if (config.prompts && config.prompts.length >= 4) {
         for (let i = 0; i < 4; i++) {
@@ -221,6 +332,8 @@ document.addEventListener("DOMContentLoaded", () => {
       facebookPageUrl: facebookPageUrlInput.value.trim(),
       facebookMediaParent: facebookMediaParentInput.value.trim(),
       facebookTemplate: facebookTemplateInput.value.trim(),
+      facebookPrompts: facebookPrompts.map((prompt) => ({ ...prompt })),
+      selectedFacebookPromptId,
       prompts: promptInputs.map(p => ({
         title: p.titleInput.value.trim(),
         content: p.contentInput.value.trim()
@@ -975,9 +1088,136 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  facebookPromptSelect.addEventListener("change", () => {
+    syncFacebookPromptEditorToState();
+    selectedFacebookPromptId = facebookPromptSelect.value;
+    loadSelectedFacebookPromptIntoEditor();
+    setFacebookPromptStatus("Chưa lưu", "dirty");
+  });
+
+  facebookPromptNameInput.addEventListener("input", () => {
+    syncFacebookPromptEditorToState();
+    setFacebookPromptStatus("Chưa lưu", "dirty");
+  });
+
+  facebookPromptContentInput.addEventListener("input", () => {
+    syncFacebookPromptEditorToState();
+    setFacebookPromptStatus("Chưa lưu", "dirty");
+  });
+
+  btnAddFacebookPrompt.addEventListener("click", () => {
+    syncFacebookPromptEditorToState();
+    if (facebookPrompts.length >= 50) return alert("Thư viện chỉ hỗ trợ tối đa 50 prompt.");
+    const newPrompt = {
+      id: createFacebookPromptId(),
+      name: `Prompt mới ${facebookPrompts.length + 1}`,
+      content: ""
+    };
+    facebookPrompts.push(newPrompt);
+    selectedFacebookPromptId = newPrompt.id;
+    renderFacebookPromptOptions();
+    loadSelectedFacebookPromptIntoEditor();
+    setFacebookPromptStatus("Chưa lưu", "dirty");
+    facebookPromptNameInput.focus();
+    facebookPromptNameInput.select();
+  });
+
+  btnSaveFacebookPrompt.addEventListener("click", async () => {
+    btnSaveFacebookPrompt.disabled = true;
+    try {
+      await persistFacebookPromptLibrary();
+    } catch (err) {
+      setFacebookPromptStatus("Lỗi lưu", "error");
+      alert(err.message);
+    } finally {
+      btnSaveFacebookPrompt.disabled = false;
+    }
+  });
+
+  btnDeleteFacebookPrompt.addEventListener("click", async () => {
+    syncFacebookPromptEditorToState();
+    const prompt = getSelectedFacebookPrompt();
+    if (!prompt) return;
+    if (facebookPrompts.length === 1) return alert("Cần giữ lại ít nhất một prompt trong thư viện.");
+    if (!window.confirm(`Xóa prompt “${prompt.name || "chưa đặt tên"}”?`)) return;
+
+    const previousPrompts = facebookPrompts.map((item) => ({ ...item }));
+    const previousSelectedId = selectedFacebookPromptId;
+    const removedIndex = facebookPrompts.findIndex((item) => item.id === prompt.id);
+    facebookPrompts.splice(removedIndex, 1);
+    selectedFacebookPromptId = facebookPrompts[Math.min(removedIndex, facebookPrompts.length - 1)].id;
+    renderFacebookPromptOptions();
+    loadSelectedFacebookPromptIntoEditor();
+    try {
+      await persistFacebookPromptLibrary(`Đã xóa prompt “${prompt.name}”.`);
+    } catch (err) {
+      facebookPrompts = previousPrompts;
+      selectedFacebookPromptId = previousSelectedId;
+      renderFacebookPromptOptions();
+      loadSelectedFacebookPromptIntoEditor();
+      setFacebookPromptStatus("Lỗi xóa", "error");
+      alert(err.message);
+    }
+  });
+
+  btnExportFacebookPrompts.addEventListener("click", () => {
+    try {
+      syncFacebookPromptEditorToState();
+      validateFacebookPromptLibrary();
+      const payload = {
+        format: "notion-product-creator-facebook-prompts",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        selectedPromptId: selectedFacebookPromptId,
+        prompts: facebookPrompts
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "notion-product-creator-facebook-prompts.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      appendLocalLog(`Đã xuất ${facebookPrompts.length} prompt Facebook.`, "success");
+    } catch (err) {
+      setFacebookPromptStatus("Không thể xuất", "error");
+      alert(err.message);
+    }
+  });
+
+  btnImportFacebookPrompts.addEventListener("click", () => facebookPromptsImportFile.click());
+
+  facebookPromptsImportFile.addEventListener("change", async () => {
+    const file = facebookPromptsImportFile.files?.[0];
+    facebookPromptsImportFile.value = "";
+    if (!file) return;
+    try {
+      if (file.size > 1024 * 1024) throw new Error("File prompt không được vượt quá 1 MB.");
+      const payload = JSON.parse(await file.text());
+      const importedPrompts = normalizeImportedFacebookPrompts(Array.isArray(payload) ? payload : payload.prompts);
+      if (!window.confirm(`Nhập ${importedPrompts.length} prompt và thay thế thư viện hiện tại?`)) return;
+      facebookPrompts = importedPrompts;
+      selectedFacebookPromptId = facebookPrompts.some((prompt) => prompt.id === payload.selectedPromptId)
+        ? payload.selectedPromptId
+        : facebookPrompts[0].id;
+      renderFacebookPromptOptions();
+      loadSelectedFacebookPromptIntoEditor();
+      await persistFacebookPromptLibrary(`Đã nhập và lưu ${facebookPrompts.length} prompt Facebook.`);
+    } catch (err) {
+      setFacebookPromptStatus("Lỗi nhập file", "error");
+      alert(`Không thể nhập thư viện prompt: ${err.message}`);
+    }
+  });
+
   document.getElementById("btn-save-facebook-config").addEventListener("click", async () => {
-    await saveConfig();
-    appendLocalLog("Đã lưu cấu hình Page Facebook.", "success");
+    try {
+      await persistFacebookPromptLibrary("Đã lưu cấu hình Page Facebook và thư viện prompt.");
+    } catch (err) {
+      setFacebookPromptStatus("Lỗi lưu", "error");
+      alert(err.message);
+    }
   });
 
   document.getElementById("btn-start-facebook").addEventListener("click", async () => {
@@ -1090,12 +1330,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
   btnConfirmFacebookPublished.addEventListener("click", confirmWaitingFacebookProducts);
 
-  document.getElementById("btn-generate-facebook").addEventListener("click", async () => {
+  document.getElementById("btn-generate-facebook").addEventListener("click", async (event) => {
     if (!facebookProduct) return alert("Hãy lấy dữ liệu sản phẩm từ Notion trước.");
-    const res = await fetch("/api/facebook/generate-content", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productName: facebookProduct.productName, webUrl: facebookProduct.webUrl, template: facebookTemplateInput.value.trim() }) });
-    const data = await res.json();
-    if (!res.ok) return alert(data.error || "Không thể tạo bài Facebook.");
-    facebookContentInput.value = data.content;
+    syncFacebookPromptEditorToState();
+    const activePrompt = getSelectedFacebookPrompt();
+    if (!activePrompt?.content.trim()) return alert("Hãy nhập nội dung prompt trước khi tạo bài bằng AI.");
+
+    const button = event.currentTarget;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "AI đang viết bài...";
+    try {
+      const res = await fetch("/api/facebook/generate-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productName: facebookProduct.productName,
+          webUrl: facebookProduct.webUrl,
+          template: facebookTemplateInput.value.trim(),
+          prompt: activePrompt.content.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Không thể tạo bài Facebook.");
+      facebookContentInput.value = data.content;
+      appendLocalLog(`Đã tạo bài Facebook bằng prompt “${activePrompt.name}”.`, "success");
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
   });
 
   document.getElementById("btn-publish-facebook").addEventListener("click", async () => {

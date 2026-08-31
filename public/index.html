@@ -316,7 +316,7 @@
           <div class="card-body">
             <div class="form-group"><label for="facebook-page-url">URL Page Facebook</label><input id="facebook-page-url" type="url" placeholder="https://www.facebook.com/ten-page"></div>
             <div class="form-group"><label for="facebook-media-parent">Thư mục gốc ảnh Facebook</label><div class="input-with-button"><input id="facebook-media-parent" type="text" readonly placeholder="Chọn thư mục gốc chứa các thư mục sản phẩm"><button id="btn-select-facebook-media" class="btn secondary">Duyệt</button></div></div>
-            <div class="form-group"><label for="facebook-template">Mẫu bài đăng Facebook</label><textarea id="facebook-template" rows="9" placeholder="Dán mẫu bài đăng bạn muốn AI tham khảo tại đây. AI sẽ giữ giọng điệu/cấu trúc mẫu, sau đó tự thay nội dung theo sản phẩm."></textarea></div>
+            <div class="form-group"><label for="facebook-template">Mẫu bài đăng tham khảo (không bắt buộc)</label><textarea id="facebook-template" rows="6" placeholder="Dán một bài đăng mẫu nếu muốn AI tham khảo cách trình bày. Prompt chính được quản lý ở khung Tạo & đăng bài Facebook."></textarea></div>
             <button id="btn-save-facebook-config" class="btn primary w-full">Lưu cấu hình Facebook</button>
           </div>
         </div>
@@ -334,6 +334,38 @@
           <div class="card-body flex-grow">
             <div class="form-group"><div class="pending-products-heading"><label>Sản phẩm chờ đăng Facebook</label><div class="pending-products-actions"><button id="btn-refresh-facebook-products" class="btn secondary btn-compact">↻ Quét Notion</button><button id="btn-confirm-facebook-published" class="btn accent btn-compact" title="Quét các bài Chờ đăng và xác nhận đã đăng thủ công trên Facebook">✓ Quét Chờ đăng → Đã đăng</button></div></div><div id="facebook-pending-products" class="facebook-pending-products" aria-live="polite">Đang chờ quét danh sách sản phẩm.</div><p class="desc-text">Chọn 1 sản phẩm có trạng thái Facebook “Chưa đăng” để tạo nội dung. Sau khi đăng thủ công trên Facebook, dùng nút xác nhận để chuyển các bài “Chờ đăng” sang “Đã đăng”.</p></div>
             <div id="facebook-product-info" class="facebook-product-info">Chưa tải dữ liệu sản phẩm.</div>
+            <section class="facebook-prompt-manager mt-4" aria-labelledby="facebook-prompt-manager-title">
+              <div class="facebook-prompt-manager-header">
+                <div>
+                  <h4 id="facebook-prompt-manager-title">Prompt AI viết bài</h4>
+                  <p class="desc-text">AI luôn nhận tên sản phẩm, link web và mẫu tham khảo; prompt dưới đây quyết định cách AI viết.</p>
+                </div>
+                <span id="facebook-prompt-status" class="facebook-prompt-status" data-state="saved" aria-live="polite">Đã lưu</span>
+              </div>
+              <div class="facebook-prompt-picker">
+                <div class="form-group facebook-prompt-select-group">
+                  <label for="facebook-prompt-select">Prompt đang dùng</label>
+                  <select id="facebook-prompt-select" aria-describedby="facebook-prompt-status"></select>
+                </div>
+                <button id="btn-add-facebook-prompt" class="btn secondary" type="button">Thêm mới</button>
+              </div>
+              <div class="form-group">
+                <label for="facebook-prompt-name">Tên prompt</label>
+                <input id="facebook-prompt-name" type="text" maxlength="120" placeholder="Ví dụ: Bài bán hàng ngắn gọn">
+              </div>
+              <div class="form-group">
+                <label for="facebook-prompt-content">Nội dung prompt</label>
+                <textarea id="facebook-prompt-content" rows="6" maxlength="20000" placeholder="Nhập hướng dẫn để AI viết bài Facebook..."></textarea>
+                <div class="facebook-prompt-meta"><span>Dùng prompt đang hiển thị khi bấm Tạo bài bằng AI.</span><span id="facebook-prompt-counter">0 / 20.000</span></div>
+              </div>
+              <div class="facebook-prompt-actions">
+                <button id="btn-save-facebook-prompt" class="btn primary" type="button">Lưu prompt</button>
+                <button id="btn-delete-facebook-prompt" class="btn danger" type="button">Xóa</button>
+                <button id="btn-export-facebook-prompts" class="btn secondary" type="button">Xuất thư viện</button>
+                <button id="btn-import-facebook-prompts" class="btn secondary" type="button">Nhập thư viện</button>
+                <input id="facebook-prompts-import-file" type="file" accept="application/json,.json" hidden>
+              </div>
+            </section>
             <div class="form-group mt-4"><label for="facebook-content">Nội dung bài đăng</label><textarea id="facebook-content" class="editor-textarea" placeholder="AI sẽ tạo bài đăng dựa trên mẫu, Link web và Media sản phẩm từ Notion."></textarea></div>
           </div>
           <div class="card-footer facebook-actions"><button id="btn-generate-facebook" class="btn primary">Tạo bài bằng AI</button><button id="btn-publish-facebook" class="btn accent">Đưa nội dung & ảnh lên Facebook</button></div>
