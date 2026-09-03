@@ -124,4 +124,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Bổ sung thư viện prompt Facebook: hiển thị prompt mặc định, cho phép thêm/sửa/xóa/lưu, chọn prompt đang dùng và xuất/nhập thư viện JSON. Prompt đang hiển thị được gửi trực tiếp cho OpenAI khi tạo bài."
+            --notes "Tăng tốc và ổn định kết nối: cache cấu hình chỉ đọc có TTL/invalidation, tái sử dụng kết nối OpenAI và Notion, timeout/retry hữu hạn, vá dependency qs và ổn định test server mà không thay đổi workflow hiện tại."

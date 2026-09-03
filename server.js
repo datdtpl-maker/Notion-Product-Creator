@@ -18,6 +18,7 @@ const { Client: NotionClient } = require("@notionhq/client");
 const OpenAI = require("openai");
 const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
+const https = require("https");
 const { inferConversationTurnRole, selectNewAssistantImage } = require("./lib/chatgpt-generated-image");
 const { createConfigStore, redactConfig } = require("./lib/config-store");
 const { ensureFacebookPageComposer } = require("./lib/facebook-composer");
@@ -29,9 +30,17 @@ const {
 const { listFacebookProductsByStatus, markFacebookProductsAsPublished } = require("./lib/facebook-status");
 const { listNumberedImages, resolveProductImageFolder } = require("./lib/product-image-folder");
 const { getGoogleDriveFileId, downloadGoogleDriveLogo } = require("./lib/logo-image");
+const { createApiClientPool } = require("./lib/api-client-pool");
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+const sharedHttpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 12,
+  maxFreeSockets: 4,
+  timeout: 30_000
+});
+const apiClients = createApiClientPool({ OpenAI, NotionClient, httpsAgent: sharedHttpsAgent });
 
 async function launchChromeDebug(port, userDataDir, startUrl) {
   const candidates = process.platform === "darwin"
@@ -192,7 +201,7 @@ function extractKeyPoints(content) {
 }
 
 async function generateSeoKeywords(apiKey, productName, content) {
-  const openai = new OpenAI({ apiKey });
+  const openai = apiClients.getOpenAI(apiKey);
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0.2,
@@ -407,7 +416,7 @@ async function getNotionClient() {
   if (!apiKey) {
     throw new Error("Chưa cấu hình Notion API Key. Hãy nhập khóa trong phần Cấu hình hệ thống.");
   }
-  return new NotionClient({ auth: apiKey });
+  return apiClients.getNotion(apiKey);
 }
 
 // Markdown to Notion Blocks
@@ -714,7 +723,7 @@ app.post("/api/openai/check", async (req, res) => {
     const config = await loadConfig();
     const apiKey = String(req.body?.apiKey || "").trim() || config.openAiApiKey;
     if (!apiKey) return res.status(400).json({ error: "Vui lòng cung cấp API Key." });
-    const openai = new OpenAI({ apiKey });
+    const openai = apiClients.getOpenAI(apiKey);
     await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "ping" }],
@@ -753,7 +762,7 @@ app.post("/api/openai/generate-content", async (req, res) => {
   addLog(`Đang tạo nội dung bài viết cho sản phẩm: "${productName}"...`, "info");
 
   try {
-    const openai = new OpenAI({ apiKey });
+    const openai = apiClients.getOpenAI(apiKey);
     const systemPrompt = `
 Bạn là một dược sĩ lâm sàng cao cấp và chuyên gia sáng tạo nội dung cho nhà thuốc Khải Hoàn Skincare.
 Nhiệm vụ của bạn là viết một bài viết giới thiệu sản phẩm mới theo phong cách chuyên nghiệp, thực tế, đi thẳng vào vấn đề bệnh lý và công dụng thực tế của hoạt chất, không dùng từ ngữ ẩn dụ hoa mỹ sáo rỗng.
@@ -1461,7 +1470,7 @@ app.post("/api/facebook/generate-content", async (req, res) => {
       prompts: config.facebookPrompts,
       selectedPromptId: config.selectedFacebookPromptId
     });
-    const openai = new OpenAI({ apiKey: config.openAiApiKey });
+    const openai = apiClients.getOpenAI(config.openAiApiKey);
     const response = await openai.chat.completions.create({ model: "gpt-4o-mini", temperature: 0.8, messages: [{ role: "system", content: effectivePrompt }, { role: "user", content: `Sản phẩm: ${productName}\nLink web: ${webUrl || "chưa có"}\nMẫu tham khảo:\n${template || "Không có mẫu tham khảo."}` }] });
     res.json({ content: response.choices[0].message.content.trim() });
   } catch (err) { res.status(err.code === "FACEBOOK_PROMPT_TOO_LONG" ? 400 : 500).json({ error: err.message }); }
@@ -1714,7 +1723,7 @@ app.listen(PORT, "127.0.0.1", () => {
   addLog(`Server chạy tại: http://localhost:${PORT}`, "info");
   
   // Launch GUI App Mode automatically
-  if (process.versions.electron) {
+  if (process.versions.electron || process.env.NPC_DISABLE_AUTO_LAUNCH === "1") {
     console.log("[GUI] Chạy trong môi trường Electron. Bỏ qua mở Chrome App Mode.");
     return;
   }

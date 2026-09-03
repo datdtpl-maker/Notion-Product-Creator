@@ -35,7 +35,12 @@ test("local config API redacts secrets and product cache keeps the parent URL", 
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ["server.js"], {
     cwd: path.resolve(__dirname, ".."),
-    env: { ...process.env, PORT: String(port), NPC_CONFIG_DIR: configDirectory },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      NPC_CONFIG_DIR: configDirectory,
+      NPC_DISABLE_AUTO_LAUNCH: "1"
+    },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
   });

@@ -46,6 +46,24 @@ test("serializes partial updates without losing secrets", async (t) => {
   assert.equal(config.prompts.length, 1);
 });
 
+test("caches reads, isolates returned values and invalidates after writes", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "notion-product-creator-cache-"));
+  const configPath = path.join(directory, "config.json");
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const store = createConfigStore({
+    configPath,
+    defaults: { label: "default", nested: { enabled: true } },
+    cacheTtlMs: 10_000
+  });
+
+  const first = await store.load();
+  first.nested.enabled = false;
+  assert.equal((await store.load()).nested.enabled, true);
+
+  await store.save({ label: "saved", nested: { enabled: false } });
+  assert.deepEqual(await store.load(), { label: "saved", nested: { enabled: false } });
+});
+
 test("redacts credentials returned to the renderer", () => {
   const safe = redactConfig({
     openAiApiKey: "sk-test",

@@ -25,3 +25,7 @@ npm run electron-build-mac
 ```
 
 `electron-build-mac` phải chạy trên macOS. Workflow GitHub Actions tự tạo file `.dmg` trên runner macOS khi push tag `v*` hoặc chạy thủ công từ tab Actions.
+
+## Hiệu năng kết nối
+
+Ứng dụng cache cấu hình chỉ đọc trong thời gian ngắn và tự vô hiệu cache sau mỗi lần lưu. Client OpenAI/Notion được tái sử dụng với HTTP keep-alive, timeout 30 giây và retry hữu hạn; luồng thao tác và dữ liệu nghiệp vụ không thay đổi.
