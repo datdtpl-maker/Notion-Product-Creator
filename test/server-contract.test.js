@@ -29,6 +29,36 @@ async function waitForServer(baseUrl, child) {
   throw new Error("Server test không sẵn sàng.");
 }
 
+function waitForServerUrlFromOutput(child) {
+  return new Promise((resolve, reject) => {
+    let output = "";
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Không đọc được URL server từ output: ${output}`));
+    }, 5000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      child.stdout.off("data", onData);
+      child.off("exit", onExit);
+    };
+    const onData = (chunk) => {
+      output += chunk.toString();
+      const match = output.match(/Server chạy tại: (http:\/\/127\.0\.0\.1:\d+)/);
+      if (!match) return;
+      cleanup();
+      resolve(match[1]);
+    };
+    const onExit = (code) => {
+      cleanup();
+      reject(new Error(`Server đã thoát với mã ${code}: ${output}`));
+    };
+
+    child.stdout.on("data", onData);
+    child.once("exit", onExit);
+  });
+}
+
 test("local config API redacts secrets and product cache keeps the parent URL", async (t) => {
   const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "notion-product-creator-server-"));
   const port = await findFreePort();
@@ -84,6 +114,65 @@ test("local config API redacts secrets and product cache keeps the parent URL", 
   assert.equal(config.selectedFacebookPromptId, config.facebookPrompts[0].id);
 });
 
+test("desktop server falls back from an occupied port and OAuth uses the active port", async (t) => {
+  const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "notion-product-creator-port-"));
+  const occupiedPort = await findFreePort();
+  const blocker = net.createServer();
+  await new Promise((resolve, reject) => {
+    blocker.once("error", reject);
+    blocker.listen(occupiedPort, "127.0.0.1", resolve);
+  });
+
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: path.resolve(__dirname, ".."),
+    env: {
+      ...process.env,
+      PORT: String(occupiedPort),
+      NPC_CONFIG_DIR: configDirectory,
+      NPC_DISABLE_AUTO_LAUNCH: "1"
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+  t.after(async () => {
+    if (child.exitCode === null) child.kill();
+    await new Promise((resolve) => blocker.close(resolve));
+    await fs.rm(configDirectory, { recursive: true, force: true });
+  });
+
+  const baseUrl = await waitForServerUrlFromOutput(child);
+  assert.notEqual(Number(new URL(baseUrl).port), occupiedPort);
+  await waitForServer(baseUrl, child);
+
+  let response = await fetch(`${baseUrl}/api/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      googleDriveClientId: "test-client.apps.googleusercontent.com",
+      googleDriveClientSecret: "test-secret"
+    })
+  });
+  assert.equal(response.ok, true);
+
+  response = await fetch(`${baseUrl}/api/google-drive/start-auth`, { method: "POST" });
+  assert.equal(response.ok, true);
+  const authUrl = new URL((await response.json()).authUrl);
+  assert.equal(authUrl.searchParams.get("redirect_uri"), `${baseUrl}/api/google-drive/oauth/callback`);
+});
+
+test("Electron starts the server only after acquiring the single-instance lock", async () => {
+  const mainSource = await fs.readFile(path.resolve(__dirname, "..", "main.js"), "utf8");
+  const lockIndex = mainSource.indexOf("requestSingleInstanceLock");
+  const serverIndex = mainSource.indexOf('require("./server.js")');
+
+  assert.notEqual(lockIndex, -1);
+  assert.notEqual(serverIndex, -1);
+  assert.ok(lockIndex < serverIndex);
+  assert.match(mainSource, /serverReady/);
+  assert.match(mainSource, /second-instance/);
+  assert.doesNotMatch(mainSource, /loadURL\("http:\/\/127\.0\.0\.1:3000"\)/);
+});
+
 test("Facebook preparation uses the Chờ đăng status", async () => {
   const serverSource = await fs.readFile(path.resolve(__dirname, "..", "server.js"), "utf8");
   assert.match(serverSource, /Facebook:\s*\{\s*select:\s*\{\s*name:\s*"Chờ đăng"/);
@@ -92,7 +181,7 @@ test("Facebook preparation uses the Chờ đăng status", async () => {
 test("Notion website sync marks Facebook as Chưa đăng for create and update", async () => {
   const serverSource = await fs.readFile(path.resolve(__dirname, "..", "server.js"), "utf8");
   const routeStart = serverSource.indexOf('app.post("/api/notion/sync"');
-  const routeEnd = serverSource.indexOf("// Start Server", routeStart);
+  const routeEnd = serverSource.indexOf("function listenOnLocalPort", routeStart);
   assert.notEqual(routeStart, -1);
   assert.notEqual(routeEnd, -1);
   const notionSyncSource = serverSource.slice(routeStart, routeEnd);

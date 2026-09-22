@@ -149,6 +149,7 @@ const configStore = createConfigStore({
 let logs = [];
 let pendingGoogleDriveOAuth = null;
 let configSecurityMigrated = false;
+let activeServerPort = null;
 const addLog = (message, type = "info") => {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = { timestamp, message, type };
@@ -156,6 +157,11 @@ const addLog = (message, type = "info") => {
   console.log(`[${type.toUpperCase()}] ${message}`);
   if (logs.length > 100) logs.shift();
 };
+
+function getLocalServerOrigin() {
+  if (!activeServerPort) throw new Error("Máy chủ nội bộ chưa sẵn sàng.");
+  return `http://127.0.0.1:${activeServerPort}`;
+}
 
 // Helper: extract key points from article content for image prompt
 function extractKeyPoints(content) {
@@ -620,7 +626,7 @@ app.post("/api/google-drive/start-auth", async (req, res) => {
     const state = nodeCrypto.randomBytes(24).toString("base64url");
     const verifier = nodeCrypto.randomBytes(48).toString("base64url");
     const challenge = nodeCrypto.createHash("sha256").update(verifier).digest("base64url");
-    const redirectUri = "http://127.0.0.1:3000/api/google-drive/oauth/callback";
+    const redirectUri = `${getLocalServerOrigin()}/api/google-drive/oauth/callback`;
     pendingGoogleDriveOAuth = { state, verifier, redirectUri, clientId, clientSecret };
 
     const params = new URLSearchParams({
@@ -1717,10 +1723,24 @@ app.post("/api/notion/sync", async (req, res) => {
   }
 });
 
-// Start Server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "127.0.0.1", () => {
-  addLog(`Server chạy tại: http://localhost:${PORT}`, "info");
+function listenOnLocalPort(port) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, "127.0.0.1");
+    const onListening = () => {
+      server.off("error", onError);
+      resolve(server);
+    };
+    const onError = (error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    server.once("listening", onListening);
+    server.once("error", onError);
+  });
+}
+
+function launchStandaloneBrowser(port) {
+  addLog(`Server chạy tại: http://127.0.0.1:${port}`, "info");
   
   // Launch GUI App Mode automatically
   if (process.versions.electron || process.env.NPC_DISABLE_AUTO_LAUNCH === "1") {
@@ -1798,4 +1818,36 @@ app.listen(PORT, "127.0.0.1", () => {
   } catch (err) {
     console.error("[GUI] Lỗi khi tự động mở giao diện:", err);
   }
+}
+
+async function startLocalServer() {
+  const parsedPort = Number.parseInt(process.env.PORT || "3000", 10);
+  const preferredPort = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535
+    ? parsedPort
+    : 3000;
+  let server;
+
+  try {
+    server = await listenOnLocalPort(preferredPort);
+  } catch (error) {
+    if (error?.code !== "EADDRINUSE") throw error;
+    addLog(`Cổng ${preferredPort} đang được ứng dụng khác sử dụng. Tool sẽ tự chuyển sang cổng trống.`, "warning");
+    server = await listenOnLocalPort(0);
+  }
+
+  const address = server.address();
+  activeServerPort = typeof address === "object" && address ? address.port : preferredPort;
+  launchStandaloneBrowser(activeServerPort);
+  return { server, port: activeServerPort };
+}
+
+const serverReady = startLocalServer();
+serverReady.catch((error) => {
+  addLog(`Không thể khởi động máy chủ nội bộ: ${error.message}`, "error");
 });
+
+module.exports = {
+  app,
+  serverReady,
+  getLocalServerOrigin
+};
