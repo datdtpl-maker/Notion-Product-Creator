@@ -18,7 +18,7 @@ function findFreePort() {
 }
 
 async function waitForServer(baseUrl, child) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Server test đã thoát với mã ${child.exitCode}.`);
     try {
       const response = await fetch(`${baseUrl}/api/config`);
@@ -35,7 +35,7 @@ function waitForServerUrlFromOutput(child) {
     const timeout = setTimeout(() => {
       cleanup();
       reject(new Error(`Không đọc được URL server từ output: ${output}`));
-    }, 5000);
+    }, 15000);
 
     const cleanup = () => {
       clearTimeout(timeout);

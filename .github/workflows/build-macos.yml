@@ -26,7 +26,9 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test
+        run: |
+          npx playwright install chromium
+          npm test
 
       - name: Build Windows installer
         run: npm run electron-build
@@ -54,7 +56,9 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test
+        run: |
+          npx playwright install chromium
+          npm test
 
       - name: Configure optional Apple signing
         env:
@@ -124,4 +128,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Tăng tốc và ổn định kết nối: cache cấu hình chỉ đọc có TTL/invalidation, tái sử dụng kết nối OpenAI và Notion, timeout/retry hữu hạn, vá dependency qs và ổn định test server mà không thay đổi workflow hiện tại."
+            --notes "Sửa lỗi không tìm thấy ô nhập ChatGPT: nhận diện tab và ô nhập sẵn sàng, giữ cuộc trò chuyện của sản phẩm trong phiên tool, nhập prompt tương thích Windows/macOS, báo rõ đăng nhập/xác minh hoặc nhiều tab. Bao gồm bản sửa tự chọn cổng trống để chạy cùng Chatwoot."
