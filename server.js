@@ -152,7 +152,6 @@ let logs = [];
 let pendingGoogleDriveOAuth = null;
 let configSecurityMigrated = false;
 let activeServerPort = null;
-const productChatUrls = new Map();
 let imageJob = { status: 'idle', completed: [] };
 let managedChatSession = null;
 const addLog = (message, type = "info") => {
@@ -1128,11 +1127,8 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
     addLog(`[Ảnh ${promptIndex}] Đang tìm tab ChatGPT có ô nhập sẵn sàng (tối đa 45 giây)...`, "info");
     const { page, editor, context } = await ensureChatGptComposer(browser, {
       preferredPage: bound.page,
-      preferredUrl: Number(promptIndex) > 1 ? productChatUrls.get(targetFolder) : undefined,
       allowNewChat: false
     });
-    if (Number(promptIndex) === 1) productChatUrls.delete(targetFolder);
-    let boundChatUrl = /\/c\/[A-Za-z0-9-]+/.test(new URL(page.url()).pathname) ? page.url() : null;
     addLog(`[Ảnh ${promptIndex}] Đã chọn tab ChatGPT có thể soạn thảo.`, "success");
 
     const sendSelectors = [
@@ -1216,26 +1212,17 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
     }
 
     // 4. Wait for DALL-E image generation
-    addLog(`[Ảnh ${promptIndex}] Đang đợi DALL-E sinh ảnh (tối đa 5 phút)...`, "info");
+    addLog(`[Ảnh ${promptIndex}] Đang theo dõi ảnh kết quả; sẽ lưu ngay khi ảnh hoàn chỉnh xuất hiện (giới hạn an toàn 5 phút)...`, "info");
     let foundImage = false;
     let diagnosticPoll = 0;
     const startTime = Date.now();
 
     while (Date.now() - startTime < 300000) {
       await new Promise((r) => setTimeout(r, 1000));
-      if (boundChatUrl && page.url() !== boundChatUrl) {
-        throw new Error('Tab ChatGPT đã chuyển sang cuộc trò chuyện khác khi đang tạo ảnh. Đã dừng để tránh lưu nhầm kết quả.');
-      }
-      if (!boundChatUrl && /\/c\/[A-Za-z0-9-]+/.test(new URL(page.url()).pathname)) {
-        boundChatUrl = page.url();
-      }
-      if (boundChatUrl) productChatUrls.set(targetFolder, boundChatUrl);
-      
       try {
         const turns = await getChatGptConversationTurns(page);
         const candidate = selectNewAssistantImage(turns, initialAssistantTurnKeys);
-        const generating = await page.locator('[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Dừng tạo"]').first().isVisible().catch(() => false);
-        if (!candidate || generating) {
+        if (!candidate) {
           if (++diagnosticPoll % 20 === 0) addLog(`[Ảnh ${promptIndex}] Vẫn chờ kết quả: ${turns.length} lượt chat, ${turns.filter(t => t.authorRole === 'assistant').length} lượt ChatGPT, ${turns.reduce((n, t) => n + t.mediaCount, 0)} phần tử ảnh, ${turns.reduce((n, t) => n + t.images.length, 0)} ảnh sẵn sàng.`, 'info');
           continue;
         }

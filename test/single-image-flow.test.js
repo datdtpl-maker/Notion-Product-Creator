@@ -34,11 +34,11 @@ test('single-image API attaches the reference, saves one result and never starts
   const page = context.pages()[0];
   await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: `
     <main></main><form onsubmit="return false"><input type="file"><textarea id="prompt-textarea"></textarea>
-    <button data-testid="send-button" type="button">Gửi</button></form>
+    <button data-testid="stop-button" type="button">Đang tạo</button><button data-testid="send-button" type="button">Gửi</button></form>
     <script>
       window.sent = 0; window.uploads = 0;
       document.querySelector('input').onchange = event => { window.uploads += event.target.files.length; };
-      document.querySelector('button').onclick = () => {
+      document.querySelector('[data-testid="send-button"]').onclick = () => {
         window.sent++;
         const user = document.createElement('article'); user.dataset.turn = 'user'; user.id = 'request-' + window.sent;
         user.textContent = document.querySelector('textarea').value;
@@ -46,6 +46,7 @@ test('single-image API attaches the reference, saves one result and never starts
         const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
         canvas.getContext('2d').fillStyle = 'red'; canvas.getContext('2d').fillRect(0, 0, 512, 512);
         assistant.append(canvas); document.querySelector('main').append(user, assistant);
+        history.pushState({}, '', '/c/test-product/updated-by-chatgpt');
         document.querySelector('textarea').value = '';
       };
     </script>` }));
