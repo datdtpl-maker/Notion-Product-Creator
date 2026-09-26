@@ -6,9 +6,8 @@ const path = require('node:path');
 const { existsSync } = require('node:fs');
 const { chromium } = require('playwright');
 const { getChatGptConversationTurns, selectNewAssistantImage, saveChatGptImage } = require('../lib/chatgpt-generated-image');
-const { runImageSequence } = require('../lib/image-sequence');
 
-test('detects new article image, ignores user uploads and saves numbered PNGs before continuing', async t => {
+test('detects the result, ignores user uploads and saves exactly the selected numbered PNG', async t => {
   const browser = await chromium.launch({ ...(existsSync(chromium.executablePath()) ? {} : { channel: 'chrome' }), headless: true });
   const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'npc-save-'));
   t.after(async () => { await browser.close(); await fs.rm(folder, { recursive: true, force: true }); });
@@ -35,16 +34,8 @@ test('detects new article image, ignores user uploads and saves numbered PNGs be
   assert.equal(await page.locator('[data-testid^="conversation-turn-"][data-message-author-role="assistant"]').count(), 0);
   const selected = selectNewAssistantImage(await getChatGptConversationTurns(page), baseline);
   assert.ok(selected);
-  const generated = [];
-  const completed = await runImageSequence(['one', 'two', 'three', 'four'], 1, async index => {
-    if (index > 1) assert.ok((await fs.stat(path.join(folder, `${index - 1}.png`))).size > 0);
-    generated.push(index);
-    const destination = path.join(folder, `${index}.png`);
-    await saveChatGptImage(page.context(), selected.image, selected.src, destination);
-    return destination;
-  });
-  assert.deepEqual(completed, [1, 2, 3, 4]);
-  assert.deepEqual(generated, [1, 2, 3, 4]);
+  await saveChatGptImage(page.context(), selected.image, selected.src, path.join(folder, '1.png'));
+  assert.deepEqual(await fs.readdir(folder), ['1.png']);
   const bytes = await fs.readFile(path.join(folder, '1.png'));
   assert.equal(bytes.readUInt32BE(16), 512);
   assert.equal(bytes.readUInt32BE(20), 512);
@@ -52,16 +43,22 @@ test('detects new article image, ignores user uploads and saves numbered PNGs be
   await preview.setContent(`<img src="data:image/png;base64,${bytes.toString('base64')}">`);
   assert.equal(await preview.locator('img').evaluate(async img => { await img.decode(); return img.naturalWidth; }), 512);
 
-  const attempted = [];
-  await assert.rejects(runImageSequence(['one', 'two', 'three'], 2, async index => {
-    attempted.push(index); throw new Error('disk full');
-  }), /disk full/);
-  assert.deepEqual(attempted, [2]);
-  const invalid = path.join(folder, 'invalid.png');
-  await fs.writeFile(invalid, '<html>not image</html>');
-  await assert.rejects(runImageSequence(['one', 'two'], 1, async () => invalid), /PNG hợp lệ/);
+  await assert.rejects(saveChatGptImage(context, selected.image, selected.src, path.join(folder, 'missing-directory', '2.png')), /ENOENT/);
 
   await page.setContent(`<article aria-label="You said:"><img alt="Generated image" src="${png}"></article><div contenteditable="true"><img src="${png}"></div>`);
   await page.waitForFunction(() => [...document.images].every(img => img.complete));
+  assert.equal(selectNewAssistantImage(await getChatGptConversationTurns(page), new Set()), null);
+
+  // Reproduce the newer DOM: no author-role/alt, role is held in data-turn.
+  await page.setContent(`<article data-turn="user"><img src="${png}"></article><article data-turn="assistant"><canvas width="512" height="512"></canvas></article>`);
+  await page.locator('canvas').evaluate(canvas => { canvas.getContext('2d').fillRect(0, 0, 512, 512); });
+  let result = selectNewAssistantImage(await getChatGptConversationTurns(page), new Set());
+  assert.ok(result, 'canvas result with data-turn must be detected');
+  await saveChatGptImage(context, result.image, result.src, path.join(folder, '2.png'));
+  await page.setContent(`<article data-turn="assistant"><div role="img" style="width:512px;height:512px;background-image:url('${png}')"></div></article>`);
+  result = selectNewAssistantImage(await getChatGptConversationTurns(page), new Set());
+  assert.ok(result, 'CSS image result must be detected');
+  await saveChatGptImage(context, result.image, result.src, path.join(folder, '3.png'));
+  await page.setContent(`<article data-turn="user"><canvas width="512" height="512"></canvas><img alt="Generated image" src="${png}"></article>`);
   assert.equal(selectNewAssistantImage(await getChatGptConversationTurns(page), new Set()), null);
 });

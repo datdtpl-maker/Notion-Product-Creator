@@ -32,7 +32,7 @@ const { listNumberedImages, resolveProductImageFolder } = require("./lib/product
 const { getGoogleDriveFileId, downloadGoogleDriveLogo } = require("./lib/logo-image");
 const { createApiClientPool } = require("./lib/api-client-pool");
 const { ensureChatGptComposer, fillChatGptPrompt } = require("./lib/chatgpt-composer");
-const { runImageSequence } = require("./lib/image-sequence");
+const { readDebugEndpoint, bindChatGptSession, connectBoundChatGpt } = require('./lib/chatgpt-session');
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -44,7 +44,7 @@ const sharedHttpsAgent = new https.Agent({
 });
 const apiClients = createApiClientPool({ OpenAI, NotionClient, httpsAgent: sharedHttpsAgent });
 
-async function launchChromeDebug(port, userDataDir, startUrl) {
+async function launchChromeDebug(port, userDataDir, startUrl, verifyProfile = false) {
   const candidates = process.platform === "darwin"
     ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
     : ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"];
@@ -53,13 +53,13 @@ async function launchChromeDebug(port, userDataDir, startUrl) {
     try { await fs.access(candidate); executable = candidate; break; } catch {}
   }
   const args = [`--remote-debugging-port=${port}`, `--user-data-dir=${userDataDir}`, "--remote-allow-origins=*", "--new-window", startUrl];
-  if (process.platform === "win32") {
-    const argsStr = args.map((arg) => `'${arg}'`).join(", ");
-    exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '${executable}' -ArgumentList ${argsStr}"`);
-  } else {
-    const child = spawn(executable, args, { detached: true, stdio: "ignore" });
+  if (verifyProfile) args.unshift('--enable-automation');
+  await new Promise((resolve, reject) => {
+    const child = spawn(executable, args, { detached: true, stdio: "ignore", windowsHide: true });
+    child.once('error', reject);
+    child.once('spawn', resolve);
     child.unref();
-  }
+  });
 }
 
 const isPkg = typeof process.pkg !== "undefined";
@@ -154,6 +154,7 @@ let configSecurityMigrated = false;
 let activeServerPort = null;
 const productChatUrls = new Map();
 let imageJob = { status: 'idle', completed: [] };
+let managedChatSession = null;
 const addLog = (message, type = "info") => {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = { timestamp, message, type };
@@ -851,16 +852,27 @@ app.get("/api/drive/list-folders", async (req, res) => {
 // Start Chrome Debug Port 9222
 app.post("/api/chrome/start", async (req, res) => {
   try {
+    if (imageJob.status === 'running') return res.status(409).json({ error: 'Đang tạo ảnh. Hãy đợi lưu xong trước khi mở lại profile.' });
+    managedChatSession = null;
     const config = await loadConfig();
     const port = config.chromeDebugPort || 9222;
     const userDataDir = config.chromeUserDataDir || path.join(configDir, "chatgpt_profile");
 
     await fs.mkdir(userDataDir, { recursive: true });
 
-    addLog(`Đang khởi động Chrome Debug...`, "info");
-    await launchChromeDebug(port, userDataDir, "https://chatgpt.com");
-
-    res.json({ success: true, message: "Đã kích hoạt Chrome Debug trên Windows Desktop. Vui lòng kiểm tra màn hình của bạn." });
+    let endpoint = await readDebugEndpoint(port).catch(() => null);
+    if (!endpoint) {
+      addLog('Đang mở Chrome Debug với profile đã cấu hình...', 'info');
+      await launchChromeDebug(port, userDataDir, 'https://chatgpt.com', true);
+      for (let attempt = 0; attempt < 30 && !endpoint; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        endpoint = await readDebugEndpoint(port).catch(() => null);
+      }
+    }
+    if (!endpoint) throw new Error('Chrome Debug chưa khởi động được.');
+    managedChatSession = await bindChatGptSession(chromium, endpoint, userDataDir);
+    addLog(`Đã khóa profile ${userDataDir} và tab ChatGPT ${managedChatSession.targetId.slice(0, 8)}.`, 'success');
+    res.json({ success: true, message: 'Đã khóa đúng profile và tab ChatGPT. Tool sẽ chỉ tạo ảnh tại tab này.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1040,11 +1052,8 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
   }
   const startIndex = Number(promptIndex);
   if (!Number.isInteger(startIndex) || startIndex < 1 || startIndex > 4) return res.status(400).json({ error: 'Số prompt phải từ 1 đến 4.' });
-  if (imageJob.status === 'running') return res.status(409).json({ error: 'Tool đang tạo và lưu ảnh. Hãy chờ chuỗi hiện tại hoàn tất.' });
-  const prompts = req.body.autoContinue === true ? req.body.prompts : Array.from({ length: startIndex }, (_, i) => i === startIndex - 1 ? promptText : '');
-  if (!Array.isArray(prompts) || (req.body.autoContinue === true && prompts.length !== 4) || prompts.length > 4 || prompts.length < startIndex || prompts.slice(startIndex - 1).some(p => typeof p !== 'string' || !p.trim())) {
-    return res.status(400).json({ error: 'Hãy điền đủ các prompt còn lại trước khi chạy tự động.' });
-  }
+  if (imageJob.status === 'running') return res.status(409).json({ error: 'Tool đang tạo và lưu ảnh. Hãy chờ ảnh hiện tại hoàn tất.' });
+  if (!managedChatSession) return res.status(409).json({ error: 'Hãy bấm Khởi động Chrome Debug để khóa đúng profile và tab trước khi sinh ảnh.' });
   imageJob = { id: nodeCrypto.randomUUID(), status: 'running', current: startIndex, completed: [] };
   const job = imageJob;
 
@@ -1089,12 +1098,9 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
     }
 
     // Start background single image automation
-    runImageSequence(prompts, startIndex, (index, text) => {
-      addLog(`[Ảnh ${index}] Bắt đầu tạo và lưu ảnh; chỉ chuyển prompt sau khi file đã lưu thành công.`, 'info');
-      return runSingleImageAutomationInBackground(port, index === 1 ? refImagePath : null, logoImagePath, text, index, targetFolder, productName, driveUrl, details, content);
-    }, (index, completed) => { job.current = index; job.completed = [...completed]; })
-      .then(completed => { job.completed = completed; job.status = 'completed'; addLog('Đã hoàn tất tạo và lưu toàn bộ ảnh trong chuỗi.', 'success'); })
-      .catch(error => { job.status = 'failed'; job.error = error.message; addLog(`Chuỗi tạo ảnh đã dừng: ${error.message}`, 'error'); });
+    runSingleImageAutomationInBackground(port, refImagePath, logoImagePath, promptText, startIndex, targetFolder, productName, driveUrl, details, content)
+      .then(savedPath => { job.completed = [startIndex]; job.savedPath = savedPath; job.status = 'completed'; addLog(`Đã lưu ảnh ${startIndex}. Bạn có thể tự bấm prompt tiếp theo.`, 'success'); })
+      .catch(error => { job.status = 'failed'; job.error = error.message; addLog(`Tạo ảnh ${startIndex} đã dừng: ${error.message}`, 'error'); });
 
     res.json({
       success: true,
@@ -1117,11 +1123,13 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
   addLog(`[Ảnh ${promptIndex}] Đang kết nối đến Chrome Debugging Port ${port}...`, "info");
   let browser;
   try {
-    browser = await chromium.connectOverCDP(`http://localhost:${port}`);
+    const bound = await connectBoundChatGpt(chromium, port, managedChatSession);
+    browser = bound.browser;
     addLog(`[Ảnh ${promptIndex}] Đang tìm tab ChatGPT có ô nhập sẵn sàng (tối đa 45 giây)...`, "info");
     const { page, editor, context } = await ensureChatGptComposer(browser, {
+      preferredPage: bound.page,
       preferredUrl: Number(promptIndex) > 1 ? productChatUrls.get(targetFolder) : undefined,
-      allowNewChat: Number(promptIndex) === 1
+      allowNewChat: false
     });
     if (Number(promptIndex) === 1) productChatUrls.delete(targetFolder);
     let boundChatUrl = /\/c\/[A-Za-z0-9-]+/.test(new URL(page.url()).pathname) ? page.url() : null;
@@ -1160,7 +1168,6 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
       try {
         initialAssistantTurnKeys = new Set(
           (await getChatGptConversationTurns(page))
-            .filter((turn) => turn.authorRole === "assistant")
             .map((turn) => turn.turnKey)
         );
         break;
@@ -1211,12 +1218,11 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
     // 4. Wait for DALL-E image generation
     addLog(`[Ảnh ${promptIndex}] Đang đợi DALL-E sinh ảnh (tối đa 5 phút)...`, "info");
     let foundImage = false;
-    let stableImageSource = null;
     let diagnosticPoll = 0;
     const startTime = Date.now();
 
     while (Date.now() - startTime < 300000) {
-      await new Promise((r) => setTimeout(r, 4000));
+      await new Promise((r) => setTimeout(r, 1000));
       if (boundChatUrl && page.url() !== boundChatUrl) {
         throw new Error('Tab ChatGPT đã chuyển sang cuộc trò chuyện khác khi đang tạo ảnh. Đã dừng để tránh lưu nhầm kết quả.');
       }
@@ -1230,11 +1236,9 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
         const candidate = selectNewAssistantImage(turns, initialAssistantTurnKeys);
         const generating = await page.locator('[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Dừng tạo"]').first().isVisible().catch(() => false);
         if (!candidate || generating) {
-          stableImageSource = null;
-          if (++diagnosticPoll % 8 === 0) addLog(`[Ảnh ${promptIndex}] Vẫn chờ kết quả: ${turns.length} lượt chat, ${turns.filter(t => t.authorRole === 'assistant').length} lượt ChatGPT, ${turns.reduce((n, t) => n + t.images.length, 0)} ảnh sẵn sàng.`, 'info');
+          if (++diagnosticPoll % 20 === 0) addLog(`[Ảnh ${promptIndex}] Vẫn chờ kết quả: ${turns.length} lượt chat, ${turns.filter(t => t.authorRole === 'assistant').length} lượt ChatGPT, ${turns.reduce((n, t) => n + t.mediaCount, 0)} phần tử ảnh, ${turns.reduce((n, t) => n + t.images.length, 0)} ảnh sẵn sàng.`, 'info');
           continue;
         }
-        if (stableImageSource !== candidate.src) { stableImageSource = candidate.src; continue; }
 
         const { image, src } = candidate;
         const imagePath = path.join(targetFolder, `${promptIndex}.png`);

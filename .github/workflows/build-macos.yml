@@ -128,4 +128,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Mở rộng nhận diện ảnh kết quả ChatGPT, lưu PNG đã kiểm tra dữ liệu vào thư mục sản phẩm. Tự chạy tuần tự từ prompt đã chọn đến prompt 4, chỉ chuyển sau khi lưu ảnh thành công; dừng và báo lỗi khi chưa lưu được. Chỉ đính kèm ảnh mẫu/logo ở prompt 1, giữ cuộc trò chuyện cho các prompt tiếp theo và chặn chạy chồng lệnh."
+            --notes "Khôi phục mỗi nút chỉ tạo một ảnh và tự lưu đúng số, chờ người dùng chọn prompt tiếp theo. Khóa profile Chrome và tab theo mã phiên, không tự đổi tab hoặc màu giao diện. Mở rộng đọc ảnh kết quả data-turn/canvas/nền CSS. Sau khi cập nhật, đóng cửa sổ Chrome Debug cũ rồi mở lại từ tool một lần để xác minh profile; dữ liệu đăng nhập trong profile được giữ nguyên."

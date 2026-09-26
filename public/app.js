@@ -968,8 +968,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Setup single prompt generate buttons
   document.querySelectorAll(".btn-generate-single").forEach(btn => {
     const start = Number(btn.getAttribute('data-index'));
-    btn.textContent = start < 4 ? `Sinh ảnh ${start} → 4` : 'Sinh ảnh 4';
-    btn.title = 'Tự lưu từng ảnh vào thư mục sản phẩm rồi chạy prompt tiếp theo.';
+    btn.textContent = `Sinh ảnh ${start}`;
+    btn.title = 'Tạo một ảnh, tự lưu đúng thư mục rồi chờ bạn chọn prompt tiếp theo.';
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const productName = prodNameInput.value.trim();
@@ -1013,8 +1013,6 @@ document.addEventListener("DOMContentLoaded", () => {
             driveUrl: productDriveUrlInput.value.trim() || currentProductDriveUrl,
             promptIndex: index,
             promptText,
-            autoContinue: true,
-            prompts: promptInputs.map(p => p.contentInput.value.trim()),
             details,
             content,
             referenceImage: index === "1" ? referenceImageBase64 : null,
@@ -1027,7 +1025,7 @@ document.addEventListener("DOMContentLoaded", () => {
             currentProductDriveUrl = data.driveUrl;
           }
           appendLocalLog(data.message, "success");
-          appendLocalLog(`Đang tạo lần lượt ảnh ${index}–4. Tool lưu file xong mới chuyển prompt; giữ nguyên tab ChatGPT trong lúc chạy.`, 'info');
+          appendLocalLog(`Đang tạo riêng ảnh ${index}. Tool sẽ tự lưu kết quả và dừng; giữ nguyên tab ChatGPT trong lúc chạy.`, 'info');
           while (true) {
             await new Promise(resolve => setTimeout(resolve, 1500));
             const statusResponse = await fetch('/api/chrome/image-job');
@@ -1036,7 +1034,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (job.id !== data.jobId) throw new Error('Phiên tạo ảnh đã thay đổi. Kiểm tra nhật ký của tool.');
             if (job.status === 'failed') throw new Error(job.error);
             if (job.status === 'completed') {
-              alert(`Đã tạo và lưu thành công ảnh ${job.completed.join(', ')} vào thư mục sản phẩm.`);
+              alert(`Đã lưu ảnh ${index} thành công tại:\n${job.savedPath}\nBạn có thể chọn prompt tiếp theo.`);
               break;
             }
           }
