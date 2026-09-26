@@ -1254,11 +1254,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
     }
 
     await fillChatGptPrompt(editor, promptProcessed);
-    
-    await new Promise((r) => setTimeout(r, 500));
-    await page.keyboard.press("Space");
-    await page.keyboard.press("Backspace");
-    await new Promise((r) => setTimeout(r, 1000));
+    addLog(`[Ảnh ${promptIndex}] Đã nhập và kiểm tra đầy đủ nội dung prompt.`, "success");
 
     // 3. Send prompt
     let clicked = false;

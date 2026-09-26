@@ -128,4 +128,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Sửa lỗi không tìm thấy ô nhập ChatGPT: nhận diện tab và ô nhập sẵn sàng, giữ cuộc trò chuyện của sản phẩm trong phiên tool, nhập prompt tương thích Windows/macOS, báo rõ đăng nhập/xác minh hoặc nhiều tab. Bao gồm bản sửa tự chọn cổng trống để chạy cùng Chatwoot."
+            --notes "Sửa lỗi báo prompt chưa khớp dù đã nhập: chuẩn hóa khoảng trắng và Unicode tiếng Việt khi đối chiếu, chờ ô nhập ổn định, thử nhập lại bằng bàn phím khi nội dung bị ghi đè. Vẫn dừng trước khi gửi nếu thực sự thiếu hoặc sai nội dung. Bao gồm các sửa lỗi chọn tab ChatGPT và xung đột cổng từ bản trước."

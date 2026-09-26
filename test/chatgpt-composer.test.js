@@ -37,6 +37,45 @@ test('ChatGPT composer selection and editing in a real browser', async t => {
     await fillChatGptPrompt(result.editor, 'Prompt 1 mới');
     assert.equal(await result.editor.inputValue(), 'Prompt 1 mới');
   });
+  await t.test('rich-text paragraphs and Vietnamese Unicode normalization preserve prompt content', async t => {
+    const context = await contextFor(t);
+    const page = await fixture(context, 'https://chatgpt.com/', `<div id="prompt-textarea" contenteditable="true"></div><script>
+      const editor = document.getElementById('prompt-textarea');
+      editor.addEventListener('input', () => {
+        const lines = editor.innerText.split('\\n');
+        editor.replaceChildren(...lines.map(line => {
+          const p = document.createElement('p');
+          p.textContent = line.normalize('NFD').replaceAll(' ', '\\u00a0');
+          return p;
+        }));
+      });
+    </script>`);
+    await fillChatGptPrompt(page.locator('#prompt-textarea'), 'Tạo ảnh sản phẩm\nGiữ logo góc phải\nKhông che chữ');
+    assert.match(await page.locator('#prompt-textarea').innerText(), /logo/);
+  });
+  await t.test('retries when a controlled editor replaces the initial insertion', async t => {
+    const context = await contextFor(t);
+    const page = await fixture(context, 'https://chatgpt.com/', `<div id="prompt-textarea" contenteditable="true"></div><script>
+      const editor = document.getElementById('prompt-textarea');
+      let first = true;
+      editor.addEventListener('input', () => {
+        if (!first) return;
+        first = false;
+        setTimeout(() => { editor.textContent = 'chỉ còn logo'; }, 100);
+      });
+    </script>`);
+    await fillChatGptPrompt(page.locator('#prompt-textarea'), 'Toàn bộ prompt và logo');
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator('#prompt-textarea').innerText(), 'Toàn bộ prompt và logo');
+  });
+  await t.test('still rejects genuinely missing or changed words', async t => {
+    const context = await contextFor(t);
+    const page = await fixture(context, 'https://chatgpt.com/', `<div id="prompt-textarea" contenteditable="true"></div><script>
+      const editor = document.getElementById('prompt-textarea');
+      editor.addEventListener('input', () => { editor.textContent = 'chỉ còn logo'; });
+    </script>`);
+    await assert.rejects(fillChatGptPrompt(page.locator('#prompt-textarea'), 'Toàn bộ prompt và logo'), /chưa khớp/);
+  });
   await t.test('continuation stays on the remembered conversation across contexts', async t => {
     const first = await contextFor(t);
     const second = await contextFor(t);
