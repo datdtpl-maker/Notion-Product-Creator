@@ -967,6 +967,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Setup single prompt generate buttons
   document.querySelectorAll(".btn-generate-single").forEach(btn => {
+    const start = Number(btn.getAttribute('data-index'));
+    btn.textContent = start < 4 ? `Sinh ảnh ${start} → 4` : 'Sinh ảnh 4';
+    btn.title = 'Tự lưu từng ảnh vào thư mục sản phẩm rồi chạy prompt tiếp theo.';
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const productName = prodNameInput.value.trim();
@@ -996,11 +999,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      btn.disabled = true;
+      const imageButtons = document.querySelectorAll('.btn-generate-single');
+      imageButtons.forEach(button => { button.disabled = true; });
       appendLocalLog(`============== KHỞI CHẠY TẠO ẢNH ${index} ==============`, "info");
-      await saveConfig();
-
       try {
+        await saveConfig();
         const res = await fetch("/api/chrome/generate-single-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1010,6 +1013,8 @@ document.addEventListener("DOMContentLoaded", () => {
             driveUrl: productDriveUrlInput.value.trim() || currentProductDriveUrl,
             promptIndex: index,
             promptText,
+            autoContinue: true,
+            prompts: promptInputs.map(p => p.contentInput.value.trim()),
             details,
             content,
             referenceImage: index === "1" ? referenceImageBase64 : null,
@@ -1022,7 +1027,19 @@ document.addEventListener("DOMContentLoaded", () => {
             currentProductDriveUrl = data.driveUrl;
           }
           appendLocalLog(data.message, "success");
-          alert(`Đã gửi lệnh sinh ảnh ${index} lên ChatGPT! Trình duyệt đang tự động hóa để tải ảnh về.`);
+          appendLocalLog(`Đang tạo lần lượt ảnh ${index}–4. Tool lưu file xong mới chuyển prompt; giữ nguyên tab ChatGPT trong lúc chạy.`, 'info');
+          while (true) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const statusResponse = await fetch('/api/chrome/image-job');
+            if (!statusResponse.ok) throw new Error('Không đọc được tiến độ tạo ảnh. Kiểm tra nhật ký trước khi chạy lại.');
+            const job = await statusResponse.json();
+            if (job.id !== data.jobId) throw new Error('Phiên tạo ảnh đã thay đổi. Kiểm tra nhật ký của tool.');
+            if (job.status === 'failed') throw new Error(job.error);
+            if (job.status === 'completed') {
+              alert(`Đã tạo và lưu thành công ảnh ${job.completed.join(', ')} vào thư mục sản phẩm.`);
+              break;
+            }
+          }
         } else {
           throw new Error(data.error || `Lỗi khi yêu cầu sinh ảnh ${index}`);
         }
@@ -1030,7 +1047,7 @@ document.addEventListener("DOMContentLoaded", () => {
         appendLocalLog(`Lỗi sinh ảnh ${index}: ${err.message}`, "error");
         alert(`Lỗi: ${err.message}`);
       } finally {
-        btn.disabled = false;
+        imageButtons.forEach(button => { button.disabled = false; });
       }
     });
   });

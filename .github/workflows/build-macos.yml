@@ -128,4 +128,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Sửa lỗi báo prompt chưa khớp dù đã nhập: chuẩn hóa khoảng trắng và Unicode tiếng Việt khi đối chiếu, chờ ô nhập ổn định, thử nhập lại bằng bàn phím khi nội dung bị ghi đè. Vẫn dừng trước khi gửi nếu thực sự thiếu hoặc sai nội dung. Bao gồm các sửa lỗi chọn tab ChatGPT và xung đột cổng từ bản trước."
+            --notes "Mở rộng nhận diện ảnh kết quả ChatGPT, lưu PNG đã kiểm tra dữ liệu vào thư mục sản phẩm. Tự chạy tuần tự từ prompt đã chọn đến prompt 4, chỉ chuyển sau khi lưu ảnh thành công; dừng và báo lỗi khi chưa lưu được. Chỉ đính kèm ảnh mẫu/logo ở prompt 1, giữ cuộc trò chuyện cho các prompt tiếp theo và chặn chạy chồng lệnh."

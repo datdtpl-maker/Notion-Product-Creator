@@ -19,7 +19,7 @@ const OpenAI = require("openai");
 const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
 const https = require("https");
-const { inferConversationTurnRole, selectNewAssistantImage } = require("./lib/chatgpt-generated-image");
+const { getChatGptConversationTurns, selectNewAssistantImage, saveChatGptImage } = require("./lib/chatgpt-generated-image");
 const { createConfigStore, redactConfig } = require("./lib/config-store");
 const { ensureFacebookPageComposer } = require("./lib/facebook-composer");
 const {
@@ -32,6 +32,7 @@ const { listNumberedImages, resolveProductImageFolder } = require("./lib/product
 const { getGoogleDriveFileId, downloadGoogleDriveLogo } = require("./lib/logo-image");
 const { createApiClientPool } = require("./lib/api-client-pool");
 const { ensureChatGptComposer, fillChatGptPrompt } = require("./lib/chatgpt-composer");
+const { runImageSequence } = require("./lib/image-sequence");
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -152,6 +153,7 @@ let pendingGoogleDriveOAuth = null;
 let configSecurityMigrated = false;
 let activeServerPort = null;
 const productChatUrls = new Map();
+let imageJob = { status: 'idle', completed: [] };
 const addLog = (message, type = "info") => {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = { timestamp, message, type };
@@ -268,74 +270,6 @@ function downloadImageAsBase64(url) {
   });
 }
 
-function isChatGptContentImageSource(src) {
-  if (!src || src.startsWith("data:")) return false;
-  if (src.startsWith("blob:")) return true;
-
-  try {
-    const host = new URL(src).hostname.toLowerCase();
-    return !host.endsWith("oaistatic.com");
-  } catch {
-    return false;
-  }
-}
-
-async function collectReadyImages(container) {
-  const images = container.locator("img");
-  const count = await images.count();
-  const readyImages = [];
-
-  for (let index = 0; index < count; index++) {
-    const image = images.nth(index);
-    const src = await image.getAttribute("src");
-    const alt = await image.getAttribute("alt") || "";
-    if (!isChatGptContentImageSource(src)) continue;
-    const isReady = await image.evaluate((element) => (
-      element.complete && element.naturalWidth >= 256 && element.naturalHeight >= 256
-    )).catch(() => false);
-    if (isReady) readyImages.push({ image, src, alt });
-  }
-  return readyImages;
-}
-
-async function getChatGptConversationTurns(page) {
-  const turns = page.locator('[data-testid^="conversation-turn-"]');
-  const count = await turns.count();
-  const result = [];
-
-  for (let index = 0; index < count; index++) {
-    const turn = turns.nth(index);
-    const testId = await turn.getAttribute("data-testid");
-    const images = await collectReadyImages(turn);
-    const authorRole = inferConversationTurnRole({
-      ownRole: await turn.getAttribute("data-message-author-role"),
-      userMarkerCount: await turn.locator('[data-message-author-role="user"]').count(),
-      assistantMarkerCount: await turn.locator('[data-message-author-role="assistant"]').count(),
-      readyImageCount: images.length
-    });
-    result.push({
-      turnKey: testId || `conversation-turn-${index}`,
-      authorRole,
-      images
-    });
-  }
-
-  if (result.length) return result;
-
-  // Fallback for a future ChatGPT DOM variant without conversation-turn test IDs.
-  const assistantMessages = page.locator('[data-message-author-role="assistant"]');
-  const assistantCount = await assistantMessages.count();
-  for (let index = 0; index < assistantCount; index++) {
-    const message = assistantMessages.nth(index);
-    result.push({
-      turnKey: `assistant-message-${index}`,
-      authorRole: "assistant",
-      images: await collectReadyImages(message)
-    });
-  }
-  return result;
-}
-
 async function filesAreIdentical(firstPath, secondPath) {
   if (!firstPath || !secondPath) return false;
   try {
@@ -346,24 +280,6 @@ async function filesAreIdentical(firstPath, secondPath) {
   } catch {
     return false;
   }
-}
-
-async function saveChatGptImage(context, image, src, imagePath) {
-  if (src.startsWith("http") && context.request) {
-    try {
-      const response = await context.request.get(src);
-      if (response.ok()) {
-        await fs.writeFile(imagePath, await response.body());
-        return "original";
-      }
-      throw new Error(`HTTP ${response.status()}`);
-    } catch (err) {
-      console.warn(`Không thể tải ảnh gốc từ ChatGPT: ${err.message}`);
-    }
-  }
-
-  await image.screenshot({ path: imagePath, animations: "disabled" });
-  return "screenshot";
 }
 
 async function getCompletedPromptImageIndexes(targetFolder) {
@@ -1109,6 +1025,8 @@ async function findCoordinationPageByTitle(notion, productName) {
 }
 
 // Generate single image on-demand using Playwright
+app.get('/api/chrome/image-job', (req, res) => res.json(imageJob));
+
 app.post("/api/chrome/generate-single-image", async (req, res) => {
   const { productName, driveParent, driveUrl: suppliedDriveUrl, promptIndex, promptText, details, content, referenceImage, logoImageUrl } = req.body;
   if (!productName) {
@@ -1120,15 +1038,22 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
   if (!promptIndex || !promptText) {
     return res.status(400).json({ error: "Thiếu prompt tạo ảnh." });
   }
+  const startIndex = Number(promptIndex);
+  if (!Number.isInteger(startIndex) || startIndex < 1 || startIndex > 4) return res.status(400).json({ error: 'Số prompt phải từ 1 đến 4.' });
+  if (imageJob.status === 'running') return res.status(409).json({ error: 'Tool đang tạo và lưu ảnh. Hãy chờ chuỗi hiện tại hoàn tất.' });
+  const prompts = req.body.autoContinue === true ? req.body.prompts : Array.from({ length: startIndex }, (_, i) => i === startIndex - 1 ? promptText : '');
+  if (!Array.isArray(prompts) || (req.body.autoContinue === true && prompts.length !== 4) || prompts.length > 4 || prompts.length < startIndex || prompts.slice(startIndex - 1).some(p => typeof p !== 'string' || !p.trim())) {
+    return res.status(400).json({ error: 'Hãy điền đủ các prompt còn lại trước khi chạy tự động.' });
+  }
+  imageJob = { id: nodeCrypto.randomUUID(), status: 'running', current: startIndex, completed: [] };
+  const job = imageJob;
 
-  const config = await loadConfig();
-  const port = config.chromeDebugPort || 9222;
-
-  // Create folder inside Drive
-  const targetFolder = path.join(driveParent, productName.replace(/[\\/:*?"<>|]/g, ""));
-  addLog(`[Ảnh ${promptIndex}] Đang tạo thư mục sản phẩm: "${targetFolder}"...`, "info");
-  
   try {
+    const config = await loadConfig();
+    const port = config.chromeDebugPort || 9222;
+    const targetFolder = path.join(driveParent, productName.replace(/[\\/:*?"<>|]/g, ""));
+    addLog(`[Ảnh ${promptIndex}] Đang tạo thư mục sản phẩm: "${targetFolder}"...`, "info");
+
     await fs.mkdir(targetFolder, { recursive: true });
     
     // Only Prompt 1 uploads the reference image. Prompts 2-4 continue the same chat with text only.
@@ -1164,16 +1089,24 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
     }
 
     // Start background single image automation
-    runSingleImageAutomationInBackground(port, refImagePath, logoImagePath, promptText, promptIndex, targetFolder, productName, driveUrl, details, content);
+    runImageSequence(prompts, startIndex, (index, text) => {
+      addLog(`[Ảnh ${index}] Bắt đầu tạo và lưu ảnh; chỉ chuyển prompt sau khi file đã lưu thành công.`, 'info');
+      return runSingleImageAutomationInBackground(port, index === 1 ? refImagePath : null, logoImagePath, text, index, targetFolder, productName, driveUrl, details, content);
+    }, (index, completed) => { job.current = index; job.completed = [...completed]; })
+      .then(completed => { job.completed = completed; job.status = 'completed'; addLog('Đã hoàn tất tạo và lưu toàn bộ ảnh trong chuỗi.', 'success'); })
+      .catch(error => { job.status = 'failed'; job.error = error.message; addLog(`Chuỗi tạo ảnh đã dừng: ${error.message}`, 'error'); });
 
     res.json({
       success: true,
+      jobId: job.id,
       message: driveUrl
         ? `Đã khởi chạy tiến trình sinh ảnh ${promptIndex} trong nền.`
         : `Đã khởi chạy sinh ảnh ${promptIndex}. Chưa có link Drive thật; hãy dán link thư mục sản phẩm trước khi đẩy Notion.`,
       driveUrl
     });
   } catch (err) {
+    job.status = 'failed';
+    job.error = err.message;
     addLog(`Lỗi khởi chạy sinh ảnh: ${err.message}`, "error");
     res.status(500).json({ error: err.message });
   }
@@ -1204,8 +1137,8 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
 
     addLog(`[Ảnh ${promptIndex}] Đang chuẩn bị gửi Prompt: "${promptText.slice(0, 50)}..."`, "info");
 
-    // 1. Upload the product reference (Prompt 1 only) and the brand logo (all prompts).
-    const attachmentPaths = [refImagePath, logoImagePath].filter(Boolean);
+    // Only the first prompt attaches references; follow-ups reuse the conversation.
+    const attachmentPaths = Number(promptIndex) === 1 ? [refImagePath, logoImagePath].filter(Boolean) : [];
     if (attachmentPaths.length) {
       addLog(`[Ảnh ${promptIndex}] Đang upload ${attachmentPaths.length} ảnh tham chiếu...`, "info");
       try {
@@ -1250,6 +1183,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
 
     promptProcessed += "\n\nYêu cầu bắt buộc về đầu ra: tạo ảnh vuông tỉ lệ 1:1 (square image), bố cục hiển thị trọn vẹn trong khung vuông, không tạo ảnh dọc hoặc ngang.";
     if (logoImagePath) {
+      if (Number(promptIndex) > 1) promptProcessed += '\n\nDùng lại logo brand_logo đã đính kèm ở prompt 1 trong cùng cuộc trò chuyện.';
       promptProcessed += "\n\nYêu cầu logo bắt buộc: file brand_logo đính kèm là logo thương hiệu chính thức. Đặt logo trong vùng phía trên bên phải nhưng dịch vào bên trái: mép phải của logo cách mép phải ảnh khoảng 7-9% chiều rộng, mép trên cách mép trên ảnh khoảng 5-7% chiều cao; chiều rộng logo khoảng 12-15% chiều rộng ảnh. Luôn chừa một vùng trống riêng cho logo. Tuyệt đối không để logo chồng lên tiêu đề, chữ, thông tin, biểu tượng quan trọng hoặc sản phẩm. Nếu vùng đặt logo đang có chữ, phải sắp xếp chữ sang trái hoặc xuống dưới để logo và toàn bộ nội dung đều dễ đọc. Giữ nguyên hình dạng, chữ, màu sắc và tỷ lệ của logo; không vẽ lại, không đổi chữ, không biến dạng và không tạo thêm logo khác.";
     }
 
@@ -1277,6 +1211,8 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
     // 4. Wait for DALL-E image generation
     addLog(`[Ảnh ${promptIndex}] Đang đợi DALL-E sinh ảnh (tối đa 5 phút)...`, "info");
     let foundImage = false;
+    let stableImageSource = null;
+    let diagnosticPoll = 0;
     const startTime = Date.now();
 
     while (Date.now() - startTime < 300000) {
@@ -1290,11 +1226,15 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
       if (boundChatUrl) productChatUrls.set(targetFolder, boundChatUrl);
       
       try {
-        const candidate = selectNewAssistantImage(
-          await getChatGptConversationTurns(page),
-          initialAssistantTurnKeys
-        );
-        if (!candidate) continue;
+        const turns = await getChatGptConversationTurns(page);
+        const candidate = selectNewAssistantImage(turns, initialAssistantTurnKeys);
+        const generating = await page.locator('[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Dừng tạo"]').first().isVisible().catch(() => false);
+        if (!candidate || generating) {
+          stableImageSource = null;
+          if (++diagnosticPoll % 8 === 0) addLog(`[Ảnh ${promptIndex}] Vẫn chờ kết quả: ${turns.length} lượt chat, ${turns.filter(t => t.authorRole === 'assistant').length} lượt ChatGPT, ${turns.reduce((n, t) => n + t.images.length, 0)} ảnh sẵn sàng.`, 'info');
+          continue;
+        }
+        if (stableImageSource !== candidate.src) { stableImageSource = candidate.src; continue; }
 
         const { image, src } = candidate;
         const imagePath = path.join(targetFolder, `${promptIndex}.png`);
@@ -1306,7 +1246,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
             addLog(`[Ảnh ${promptIndex}] Đã loại ảnh trùng với ảnh mẫu; tiếp tục chờ kết quả ChatGPT.`, "warning");
             continue;
           }
-          addLog(`[Ảnh ${promptIndex}] Đã lưu ${promptIndex}.png (${savedAs === "original" ? "file kết quả ChatGPT chất lượng gốc" : "ảnh hiển thị kết quả ChatGPT"}).`, "success");
+          addLog(`[Ảnh ${promptIndex}] Đã lưu ${promptIndex}.png (${savedAs === "original" ? "PNG theo độ phân giải ảnh nguồn" : "ảnh hiển thị kết quả ChatGPT"}) tại ${targetFolder}.`, "success");
           foundImage = true;
           break;
         } catch (downloadErr) {
@@ -1323,7 +1263,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
       const completedImageIndexes = await getCompletedPromptImageIndexes(targetFolder);
       if (completedImageIndexes.length < 4) {
         addLog(`[Ảnh ${promptIndex}] Đã có ${completedImageIndexes.length}/4 ảnh. Chưa đồng bộ Notion; chờ đủ 1.png đến 4.png.`, "info");
-        return;
+        return path.join(targetFolder, `${promptIndex}.png`);
       }
 
       // 5. Only after all four generated images exist, update Notion to
@@ -1379,13 +1319,15 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
       } catch (notionErr) {
         addLog(`[Ảnh ${promptIndex}] Cảnh báo đồng bộ Notion: ${notionErr.message}`, "warning");
       }
+      return path.join(targetFolder, `${promptIndex}.png`);
 
     } else {
-      addLog(`[Ảnh ${promptIndex}] Lỗi: Không tải được ảnh hoặc quá thời gian chờ.`, "error");
+      throw new Error(`Ảnh ${promptIndex}: chưa tìm thấy/lưu được ảnh kết quả sau 5 phút. Kiểm tra lượt trả lời ChatGPT và thử lại từ prompt này.`);
     }
 
   } catch (err) {
     addLog(`[Ảnh ${promptIndex}] Lỗi Playwright: ${err.message}`, "error");
+    throw err;
   } finally {
     if (browser) {
       await browser.close();
