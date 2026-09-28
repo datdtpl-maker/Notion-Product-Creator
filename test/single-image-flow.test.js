@@ -73,7 +73,32 @@ test('single-image API attaches the reference, saves one result and never starts
     return result;
   };
   await post('/api/config', { chromeDebugPort: chromePort, chromeUserDataDir: profile, logoImageUrl: '' });
-  await post('/api/chrome/start', {});
+  for (const route of ['/api/chrome/login', '/api/chrome/start', '/api/chrome/connect']) {
+    const untrusted = await fetch(base + route, { method: 'POST', headers: { Origin: 'https://untrusted.example' } });
+    assert.equal(untrusted.status, 403, 'external websites cannot control the local Chrome profile');
+  }
+  await context.route('https://auth.openai.com/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Just a moment...</title>Verify you are human' }));
+  await page.goto('https://auth.openai.com/login');
+  const pending = await post('/api/chrome/start', {});
+  assert.equal(pending.ready, false);
+  assert.equal(context.pages().length, 1, 'start while signing in must not open another tab');
+  let status = await (await fetch(`${base}/api/chrome/status`)).json();
+  assert.equal(status.online, true);
+  assert.equal(status.ready, false, 'online browser is not a signed-in ChatGPT session');
+  const blocked = await fetch(`${base}/api/chrome/generate-single-image`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ productName: 'Test product', driveParent: path.join(root, 'products'), promptIndex: 1, promptText: 'Do not send before login' })
+  });
+  assert.equal(blocked.status, 409);
+  assert.equal(await fs.stat(path.join(root, 'products')).then(() => true).catch(() => false), false);
+  const loginWhileDebug = await fetch(`${base}/api/chrome/login`, { method: 'POST' });
+  assert.equal(loginWhileDebug.status, 409, 'manual login must never spawn into the running automated profile');
+  assert.equal(context.pages().length, 1);
+  await page.goto('https://chatgpt.com/c/test-product');
+  const connected = await post('/api/chrome/connect', {});
+  assert.equal(connected.ready, true);
+  status = await (await fetch(`${base}/api/chrome/status`)).json();
+  assert.equal(status.ready, true);
   await post('/api/chrome/generate-single-image', {
     productName: 'Test product', driveParent: path.join(root, 'products'), promptIndex: 1,
     promptText: 'Tạo một ảnh sản phẩm', referenceImage,

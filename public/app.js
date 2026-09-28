@@ -64,6 +64,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnPushNotion = document.getElementById("btn-push-notion");
   const btnSaveKey = document.getElementById("btn-save-key");
   const btnStartChrome = document.getElementById("btn-start-chrome");
+  const btnLoginChrome = document.getElementById("btn-login-chrome");
+  const chromeLoginHint = document.getElementById("chrome-login-hint");
+  let chatGptReady = false;
+  let imageGenerationBusy = false;
   const btnCheckChrome = document.getElementById("btn-check-chrome");
   const btnClearLogs = document.getElementById("btn-clear-logs");
   const logBox = document.getElementById("log-box");
@@ -523,16 +527,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/api/chrome/status");
       const data = await res.json();
       const singleGenBtns = document.querySelectorAll(".btn-generate-single");
+      chatGptReady = Boolean(data.ready);
       if (data.online) {
-        chromeStatusBadge.className = "status-badge online";
-        chromeStatusText.textContent = "Chrome Debug: Online";
-        singleGenBtns.forEach(btn => btn.disabled = false);
+        chromeStatusBadge.className = `status-badge ${chatGptReady ? 'online' : 'offline'}`;
+        chromeStatusText.textContent = chatGptReady ? 'ChatGPT: Sẵn sàng' : 'Chrome: Chưa khóa tab';
+        singleGenBtns.forEach(btn => btn.disabled = !chatGptReady || imageGenerationBusy);
       } else {
         chromeStatusBadge.className = "status-badge offline";
         chromeStatusText.textContent = "Chrome Debug: Offline";
         singleGenBtns.forEach(btn => btn.disabled = true);
       }
     } catch (err) {
+      chatGptReady = false;
+      document.querySelectorAll('.btn-generate-single').forEach(btn => { btn.disabled = true; });
       console.error("Lỗi check Chrome status:", err);
     }
   }
@@ -888,33 +895,30 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Start Chrome Debug
-  btnStartChrome.addEventListener("click", async () => {
-    btnStartChrome.disabled = true;
-    appendLocalLog("Đang gửi lệnh khởi chạy Chrome Debug Port 9222 qua Windows shell...", "info");
+  async function runChromeAction(route) {
+    const buttons = [btnLoginChrome, btnStartChrome, btnCheckChrome];
+    buttons.forEach(button => { button.disabled = true; });
     try {
-      const res = await fetch("/api/chrome/start", { method: "POST" });
+      const res = await fetch(route, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        appendLocalLog(data.message, "success");
-        setTimeout(checkChromeStatus, 2500);
+        chromeLoginHint.textContent = data.message;
+        appendLocalLog(data.message, data.ready ? 'success' : 'info');
+        await checkChromeStatus();
       } else {
         throw new Error(data.error);
       }
     } catch (err) {
+      chromeLoginHint.textContent = err.message;
       appendLocalLog(err.message, "error");
       alert(err.message);
     } finally {
-      btnStartChrome.disabled = false;
+      buttons.forEach(button => { button.disabled = false; });
     }
-  });
-
-  // Check Chrome status button
-  btnCheckChrome.addEventListener("click", async () => {
-    btnCheckChrome.disabled = true;
-    await checkChromeStatus();
-    btnCheckChrome.disabled = false;
-  });
+  }
+  btnLoginChrome.addEventListener('click', () => runChromeAction('/api/chrome/login'));
+  btnStartChrome.addEventListener('click', () => runChromeAction('/api/chrome/start'));
+  btnCheckChrome.addEventListener('click', () => runChromeAction('/api/chrome/connect'));
 
   // Clear local logs
   btnClearLogs.addEventListener("click", async () => {
@@ -994,12 +998,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Check Chrome status first
       await checkChromeStatus();
-      if (chromeStatusBadge.classList.contains("offline")) {
-        alert("Trình duyệt Chrome Debug đang Offline. Hãy nhấn Khởi động Chrome Debug trước!");
+      if (!chatGptReady) {
+        alert('ChatGPT chưa sẵn sàng. Đăng nhập rồi bấm Kiểm tra và khóa tab trước khi sinh ảnh.');
         return;
       }
 
       const imageButtons = document.querySelectorAll('.btn-generate-single');
+      imageGenerationBusy = true;
       imageButtons.forEach(button => { button.disabled = true; });
       appendLocalLog(`============== KHỞI CHẠY TẠO ẢNH ${index} ==============`, "info");
       try {
@@ -1045,7 +1050,8 @@ document.addEventListener("DOMContentLoaded", () => {
         appendLocalLog(`Lỗi sinh ảnh ${index}: ${err.message}`, "error");
         alert(`Lỗi: ${err.message}`);
       } finally {
-        imageButtons.forEach(button => { button.disabled = false; });
+        imageGenerationBusy = false;
+        await checkChromeStatus();
       }
     });
   });

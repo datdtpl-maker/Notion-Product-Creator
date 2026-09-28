@@ -290,9 +290,10 @@
             <h3>🖥️ Trình duyệt điều khiển</h3>
           </div>
           <div class="card-body">
-            <p class="desc-text">Bạn cần mở Chrome ở cổng Debug để tự động hóa sinh ảnh bằng tài khoản ChatGPT cá nhân.</p>
-            <button id="btn-start-chrome" class="btn primary w-full mt-3">🌐 Khởi động Chrome Debug (Port 9222)</button>
-            <button id="btn-check-chrome" class="btn secondary w-full mt-2">🔍 Kiểm tra kết nối</button>
+            <p class="desc-text" id="chrome-login-hint" role="status">Lần đầu: mở Chrome đăng nhập ChatGPT, đóng cửa sổ đó rồi kết nối Debug. Những lần sau chỉ cần kết nối Debug.</p>
+            <button id="btn-login-chrome" class="btn secondary w-full mt-3">1. Mở Chrome đăng nhập</button>
+            <button id="btn-start-chrome" class="btn primary w-full mt-2">2. Kết nối Chrome Debug</button>
+            <button id="btn-check-chrome" class="btn secondary w-full mt-2">🔍 Kiểm tra và khóa tab</button>
           </div>
         </div>
 

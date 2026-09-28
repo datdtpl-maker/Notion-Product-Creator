@@ -128,4 +128,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Khôi phục mỗi nút chỉ tạo một ảnh và tự lưu đúng số, chờ người dùng chọn prompt tiếp theo. Khóa profile Chrome và tab theo mã phiên, không tự đổi tab hoặc màu giao diện. Mở rộng đọc ảnh kết quả data-turn/canvas/nền CSS. Sau khi cập nhật, đóng cửa sổ Chrome Debug cũ rồi mở lại từ tool một lần để xác minh profile; dữ liệu đăng nhập trong profile được giữ nguyên."
+            --notes "Tách đăng nhập ChatGPT thủ công khỏi Chrome Debug. Bấm Mở Chrome đăng nhập, đăng nhập xong đóng cửa sổ profile đó (không đăng xuất), rồi bấm Kết nối Chrome Debug. Nếu trang còn tải, bấm Kiểm tra và khóa tab khi ô nhập ChatGPT xuất hiện. Giữ nguyên tab qua trang auth.openai.com; không tự mở tab thay thế. Chỉ bật sinh ảnh khi ChatGPT sẵn sàng. Giữ profile, cookie, API key và cơ chế mỗi prompt lưu một ảnh. Sau khi cập nhật, đóng Chrome Debug cũ trước khi mở bước đăng nhập thủ công. Không tự động xử lý hoặc vượt qua xác minh Cloudflare."
