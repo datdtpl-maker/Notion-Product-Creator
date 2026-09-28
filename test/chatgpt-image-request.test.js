@@ -7,7 +7,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const { getChatGptConversationTurns, saveChatGptImage } = require('../lib/chatgpt-generated-image');
 const { createImageRequestTracker } = require('../lib/chatgpt-image-request');
-const { addSearchLayoutTurn } = require('./fixtures/chatgpt-search-layout');
+const { addSearchLayoutTurn, setCompletedImage } = require('./fixtures/chatgpt-search-layout');
 
 const prompt = 'Tạo ảnh vuông sản phẩm Vitamin K. Giữ đúng nhãn sản phẩm và logo.';
 
@@ -99,13 +99,15 @@ test('generic conversation-turn test ids do not collapse distinct turns into one
   await page.locator('#messages').evaluate(el => {
     el.innerHTML = '<div data-testid="conversation-turn"><h5>You said:</h5><p>First prompt</p></div><div data-testid="conversation-turn"><h6>ChatGPT said:</h6><canvas width="512" height="512"></canvas></div>';
   });
+  await page.locator('[data-testid="conversation-turn"]').last().evaluate(setCompletedImage);
+  await page.locator('[data-testid="conversation-turn"]').last().evaluate(el => el.insertAdjacentHTML('afterbegin', '<h6>ChatGPT said:</h6>'));
   const turns = await getChatGptConversationTurns(page);
   assert.equal(turns.length, 2);
   assert.notEqual(turns[0].turnKey, turns[1].turnKey);
   assert.equal(turns[1].images.length, 1);
 });
 
-test('recognizes a direct canvas result with edit/share controls in a plain reply', async t => {
+test('never accepts a direct canvas even with edit/share controls in a plain reply', async t => {
   const page = await fixture(t);
   const tracker = await createImageRequestTracker(page, prompt);
   await page.locator('#messages').evaluate((element, prompt) => {
@@ -115,8 +117,7 @@ test('recognizes a direct canvas result with edit/share controls in a plain repl
     element.append(user, assistant);
   }, prompt);
   const result = await tracker.poll();
-  assert.equal(result.phase, 'image-ready', JSON.stringify(result));
-  await result.candidate.image.dispose();
+  assert.equal(result.phase, 'awaiting-image', JSON.stringify(result));
 });
 
 test('tracks the exact sent prompt, ignores earlier results and saves only its completed image', async t => {
@@ -208,10 +209,7 @@ test('keeps waiting and saves 1.png when ChatGPT replaces a provisional URL duri
   assert.equal((await tracker.poll()).phase, 'awaiting-image');
   await page.evaluate(() => history.replaceState({}, '', '/c/server-assigned-id'));
   assert.equal((await tracker.poll()).phase, 'awaiting-image', 'URL remap must not stop the same request');
-  await page.locator('[data-turn="assistant"]').evaluate(el => {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
-    canvas.getContext('2d').fillRect(0, 0, 512, 512); el.replaceChildren(canvas);
-  });
+  await page.locator('[data-turn="assistant"]').evaluate(setCompletedImage);
   const result = await tracker.poll();
   assert.equal(result.phase, 'image-ready');
   assert.equal(result.conversationId, 'server-assigned-id');
@@ -276,6 +274,8 @@ test('waits for generation completion instead of saving an in-progress preview',
   }, prompt);
   assert.equal((await tracker.poll()).phase, 'awaiting-image');
   await page.locator('[aria-busy]').evaluate(el => el.remove());
+  assert.equal((await tracker.poll()).phase, 'awaiting-image', 'removing a spinner does not turn a canvas into a finished image');
+  await page.locator('[data-turn="assistant"]').evaluate(setCompletedImage);
   const result = await tracker.poll();
   assert.equal(result.phase, 'image-ready');
   await result.candidate.image.dispose();
@@ -327,6 +327,8 @@ test('identifies a headerless user turn by its exact submitted prompt and diagno
     el.innerHTML = '<div data-testid="conversation-turn"></div><div data-testid="conversation-turn"><h6>ChatGPT said:</h6><canvas width="512" height="512"></canvas></div>';
     el.firstChild.textContent = prompt;
   }, prompt);
+  await page.locator('[data-testid="conversation-turn"]').last().evaluate(setCompletedImage);
+  await page.locator('[data-testid="conversation-turn"]').last().evaluate(el => el.insertAdjacentHTML('afterbegin', '<h6>ChatGPT said:</h6>'));
   const result = await tracker.poll();
   assert.equal(result.phase, 'image-ready');
   assert.deepEqual(Object.keys(await tracker.diagnostics()).sort(), ['canvases', 'frames', 'mainRoots', 'readyImageElements', 'turnMarkers']);

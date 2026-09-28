@@ -32,6 +32,8 @@ Nhật ký phân biệt: chưa nhận diện prompt đã gửi, đã khóa promp
 
 Từ v1.2.22, tool nhận diện cả bố cục ChatGPT mới dùng tiêu đề `h4`, mã tin nhắn tìm kiếm và khối `display: contents`. Một khối tìm kiếm có thể chứa cả prompt lẫn câu trả lời; tool tách riêng từng người nói, không lấy ảnh đính kèm làm kết quả. Đã kiểm chứng nhận và lưu một ảnh kết quả thật ở độ phân giải nguồn trên Windows, cùng kiểm thử tự động lưu `1.png`–`4.png`. macOS dùng cùng logic nhưng vẫn cần kiểm tra trên tài khoản/máy thực tế.
 
+v1.2.23 sửa thêm lỗi nhận canvas hiệu ứng đang tạo ảnh là kết quả. Tool không tải canvas hoặc chụp khung chờ; chỉ nhận ảnh đã tải với nút chỉnh sửa/chia sẻ/tải xuống của ảnh hoàn chỉnh. Khi còn nút Dừng, trạng thái Creating image hoặc thanh tiến độ, tool tiếp tục chờ kể cả đã có ảnh xem trước. Trước khi ghi file, tool kiểm tra lại trạng thái và nguồn ảnh; PNG hoàn toàn trong suốt bị từ chối, file đã có được giữ nguyên nếu xác minh thất bại. Kiểm thử API bao gồm khung Creating image 31%: chưa ghi file, chưa báo thành công; sau khi thay bằng ảnh hoàn chỉnh mới lưu theo số prompt.
+
 URL được ChatGPT cập nhật sau khi gửi không còn tự động bị coi là đổi cuộc trò chuyện: tool đối chiếu danh tính tin nhắn (message ID hoặc phần tử prompt đã khóa) trong đúng tab trước khi tiếp tục. Trùng nội dung prompt hoặc trùng số thứ tự lượt chat không đủ để chấp nhận một cuộc hội thoại khác. Tải lại trang hay thay nội dung cuộc hội thoại vẫn bị chặn.
 
 ## Build

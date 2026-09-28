@@ -33,4 +33,14 @@ async function addSearchLayoutTurn(page, prompt, { index = 1, ready = true } = {
   await page.waitForFunction(() => [...document.images].every(image => image.complete));
 }
 
-module.exports = { addSearchLayoutTurn };
+async function setCompletedImage(element) {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
+  canvas.getContext('2d').fillRect(0, 0, 512, 512);
+  const figure = document.createElement('figure');
+  figure.innerHTML = '<img alt="Generated image"><button>Edit</button><button aria-label="Share generated image"></button>';
+  figure.querySelector('img').src = canvas.toDataURL();
+  element.replaceChildren(figure);
+  await figure.querySelector('img').decode();
+}
+
+module.exports = { addSearchLayoutTurn, setCompletedImage };

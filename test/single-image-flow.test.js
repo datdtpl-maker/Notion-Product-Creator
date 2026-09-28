@@ -34,7 +34,16 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
     await fs.rm(root, { recursive: true, force: true });
   });
   const page = context.pages()[0];
-  await page.exposeFunction('appendSearchTurn', (prompt, index) => addSearchLayoutTurn(page, prompt, { index, ready: index !== 1 }));
+  await page.exposeFunction('appendSearchTurn', async (prompt, index) => {
+    await addSearchLayoutTurn(page, prompt, { index });
+    if (index === 1) await page.locator('[data-chatgpt-search-message-ids="assistant-1"]').evaluate(el => {
+      const finished = el.firstElementChild;
+      el.innerHTML = '<div>Creating image</div><canvas width="376" height="332"></canvas><span>31%</span>';
+      window.finishSearchImage = () => el.replaceChildren(finished);
+      const stop = document.querySelector('[data-testid="stop-button"]');
+      stop.removeAttribute('data-testid'); stop.setAttribute('aria-label', 'Stop streaming');
+    });
+  });
   await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `
     <main></main><form onsubmit="return false"><input type="file"><textarea id="prompt-textarea"></textarea>
     <button data-testid="stop-button" type="button">Đang tạo</button><button data-testid="send-button" type="button">Gửi</button></form>
@@ -46,8 +55,8 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
         if (${layout === 'search'}) {
           await window.appendSearchTurn(document.querySelector('textarea').value, window.sent);
           window.finishImage = () => {
-            document.querySelector('[aria-busy]')?.removeAttribute('aria-busy');
-            document.querySelector('[data-testid="stop-button"]')?.remove();
+            window.finishSearchImage?.();
+            document.querySelector('button[aria-label="Stop streaming"]')?.remove();
           };
           if (window.sent > 1) window.finishImage();
           history.replaceState({}, '', location.pathname + '/updated-by-chatgpt');
@@ -62,15 +71,19 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
         if (${layout === 'marked'}) assistant.dataset.turn = 'assistant';
         assistant.id = 'result-' + window.sent;
         const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
-        canvas.getContext('2d').fillStyle = 'red'; canvas.getContext('2d').fillRect(0, 0, 512, 512);
+        canvas.getContext('2d').fillStyle = 'rgb(' + (200 - window.sent) + ',0,0)'; canvas.getContext('2d').fillRect(0, 0, 512, 512);
+        const figure = document.createElement('figure');
+        figure.innerHTML = '<img alt="Generated image"><button>Edit</button><button aria-label="Share"></button>';
+        figure.querySelector('img').src = canvas.toDataURL();
+        await figure.querySelector('img').decode();
         if (${layout === 'marked'} && window.sent === 1) {
           assistant.innerHTML = '<div aria-busy="true">Generating image</div>';
           window.finishImage = () => {
-            assistant.replaceChildren(canvas);
+            assistant.replaceChildren(figure);
             document.querySelector('[data-testid="stop-button"]')?.remove();
           };
         } else {
-          assistant.append(canvas);
+          assistant.append(figure);
           document.querySelector('[data-testid="stop-button"]')?.remove();
         }
         if (${layout === 'plain'}) {
@@ -147,6 +160,11 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     assert.equal(recognized, true, 'request must be locked while image is still generating');
+    if (layout === 'search') {
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      assert.equal((await (await fetch(`${base}/api/chrome/image-job`)).json()).status, 'running', 'must not announce success at 31%');
+      assert.equal(await fs.stat(path.join(root, 'products', 'Test product', '1.png')).then(() => true).catch(() => false), false, 'must not write the loading canvas');
+    }
     await page.evaluate(() => {
       history.replaceState({}, '', '/c/server-assigned-product');
       window.finishImage();

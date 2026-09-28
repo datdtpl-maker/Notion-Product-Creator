@@ -27,7 +27,8 @@ test('detects the result, ignores user uploads and saves exactly the selected nu
   await page.evaluate(async png => {
     const article = document.createElement('article'); article.id = 'new'; article.setAttribute('aria-label', 'ChatGPT said:');
     const img = document.createElement('img'); img.alt = 'Generated image'; img.src = URL.createObjectURL(await (await fetch(png)).blob());
-    article.append(img); document.querySelector('main').append(article); await img.decode();
+    article.append(img); article.insertAdjacentHTML('beforeend', '<button>Edit</button><button aria-label="Share"></button>');
+    document.querySelector('main').append(article); await img.decode();
   }, png);
   // The former first-choice selector sees only the user turn in this DOM.
   assert.equal(await page.locator('[data-testid^="conversation-turn-"]').count(), 1);
@@ -49,13 +50,12 @@ test('detects the result, ignores user uploads and saves exactly the selected nu
   await page.waitForFunction(() => [...document.images].every(img => img.complete));
   assert.equal(selectNewAssistantImage(await getChatGptConversationTurns(page), new Set()), null);
 
-  // Reproduce the newer DOM: no author-role/alt, role is held in data-turn.
+  // A role marker and even painted pixels do NOT make a loading canvas a result.
   await page.setContent(`<article data-turn="user"><img src="${png}"></article><article data-turn="assistant"><canvas width="512" height="512"></canvas></article>`);
   await page.locator('canvas').evaluate(canvas => { canvas.getContext('2d').fillRect(0, 0, 512, 512); });
   let result = selectNewAssistantImage(await getChatGptConversationTurns(page), new Set());
-  assert.ok(result, 'canvas result with data-turn must be detected');
-  await saveChatGptImage(context, result.image, result.src, path.join(folder, '2.png'));
-  await page.setContent(`<article data-turn="assistant"><div role="img" style="width:512px;height:512px;background-image:url('${png}')"></div></article>`);
+  assert.equal(result, null, 'canvas must never be downloaded');
+  await page.setContent(`<article data-turn="assistant"><div role="img" style="width:512px;height:512px;background-image:url('${png}')"></div><button>Edit</button><button aria-label="Share"></button></article>`);
   result = selectNewAssistantImage(await getChatGptConversationTurns(page), new Set());
   assert.ok(result, 'CSS image result must be detected');
   await saveChatGptImage(context, result.image, result.src, path.join(folder, '3.png'));
