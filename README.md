@@ -22,6 +22,14 @@ Khi nâng cấp từ bản cũ, đóng Chrome Debug cũ trước khi mở bướ
 
 Các khóa chỉ được lưu trong cấu hình cục bộ của máy, không được đưa vào Git hay bản phát hành.
 
+## Nhận và lưu ảnh ChatGPT
+
+Mỗi lần bấm sinh ảnh chỉ gửi một prompt. Tool ghi nhận cuộc hội thoại và các lượt cũ trước khi gửi, xác minh đúng nội dung prompt mới, rồi chỉ lấy ảnh ở câu trả lời tiếp theo. Ảnh được lưu thành `1.png`–`4.png` trong thư mục sản phẩm đã chọn; không tự chạy prompt kế tiếp.
+
+Bộ nhận diện hỗ trợ dấu nhận diện lượt chat, nhãn người nói và khung ảnh có nút chỉnh sửa/tải xuống/chia sẻ khi bố cục không còn dấu cũ. Ảnh mẫu, logo, kết quả cũ và ảnh đang xử lý không được coi là kết quả mới. Nếu chuyển cuộc hội thoại, tải lại trang hoặc gửi thêm prompt trong lúc chờ, tool dừng thay vì lưu nhầm. Trước khi ghi file, tool kiểm tra lại lượt trả lời; file tạm được đổi tên sau khi xác minh xong để bảo toàn ảnh đã có.
+
+Nhật ký phân biệt: chưa nhận diện prompt đã gửi, đã khóa prompt và chờ ảnh, hoặc đã tìm thấy ảnh và đang lưu. Giao diện ChatGPT có thể thay đổi; kiểm thử mô phỏng không thay thế kiểm tra trên tài khoản/máy thực tế.
+
 ## Build
 
 ```bash

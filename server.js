@@ -19,7 +19,8 @@ const OpenAI = require("openai");
 const { chromium } = require("playwright");
 const nodeCrypto = require("crypto");
 const https = require("https");
-const { getChatGptConversationTurns, selectNewAssistantImage, saveChatGptImage } = require("./lib/chatgpt-generated-image");
+const { saveChatGptImage } = require("./lib/chatgpt-generated-image");
+const { createImageRequestTracker } = require('./lib/chatgpt-image-request');
 const { createConfigStore, redactConfig } = require("./lib/config-store");
 const { ensureFacebookPageComposer } = require("./lib/facebook-composer");
 const {
@@ -1216,25 +1217,6 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
       }
     }
 
-    // Record existing assistant turns. Image URLs can change after lazy-loading,
-    // so URL-only comparison can mistake the uploaded reference for a new result.
-    let initialAssistantTurnKeys;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        initialAssistantTurnKeys = new Set(
-          (await getChatGptConversationTurns(page))
-            .map((turn) => turn.turnKey)
-        );
-        break;
-      } catch (error) {
-        addLog(`[Ảnh ${promptIndex}] Chưa chụp được mốc lượt trả lời (lần ${attempt}/3): ${error.message}`, "warning");
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-    if (!initialAssistantTurnKeys) {
-      throw new Error("Không thể ghi nhận các lượt trả lời ChatGPT hiện có; đã dừng để tránh lưu nhầm ảnh mẫu.");
-    }
-
     // 2. Fill prompt with dynamic placeholders
     const safeDetails = details || "";
     const keyPoints = extractKeyPoints(content || "");
@@ -1249,7 +1231,9 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
       promptProcessed += "\n\nYêu cầu logo bắt buộc: file brand_logo đính kèm là logo thương hiệu chính thức. Đặt logo trong vùng phía trên bên phải nhưng dịch vào bên trái: mép phải của logo cách mép phải ảnh khoảng 7-9% chiều rộng, mép trên cách mép trên ảnh khoảng 5-7% chiều cao; chiều rộng logo khoảng 12-15% chiều rộng ảnh. Luôn chừa một vùng trống riêng cho logo. Tuyệt đối không để logo chồng lên tiêu đề, chữ, thông tin, biểu tượng quan trọng hoặc sản phẩm. Nếu vùng đặt logo đang có chữ, phải sắp xếp chữ sang trái hoặc xuống dưới để logo và toàn bộ nội dung đều dễ đọc. Giữ nguyên hình dạng, chữ, màu sắc và tỷ lệ của logo; không vẽ lại, không đổi chữ, không biến dạng và không tạo thêm logo khác.";
     }
 
+    const requestTracker = await createImageRequestTracker(page, promptProcessed);
     await fillChatGptPrompt(editor, promptProcessed);
+    await requestTracker.assertConversation({ beforeSend: true });
     addLog(`[Ảnh ${promptIndex}] Đã nhập và kiểm tra đầy đủ nội dung prompt.`, "success");
 
     // 3. Send prompt
@@ -1274,15 +1258,28 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
     addLog(`[Ảnh ${promptIndex}] Đang theo dõi ảnh kết quả; sẽ lưu ngay khi ảnh hoàn chỉnh xuất hiện (giới hạn an toàn 5 phút)...`, "info");
     let foundImage = false;
     let diagnosticPoll = 0;
+    let lastPhase = '';
+    let lastReadError = '';
     const startTime = Date.now();
 
     while (Date.now() - startTime < 300000) {
       await new Promise((r) => setTimeout(r, 1000));
       try {
-        const turns = await getChatGptConversationTurns(page);
-        const candidate = selectNewAssistantImage(turns, initialAssistantTurnKeys);
+        const observation = await requestTracker.poll();
+        const { candidate, phase, diagnostics } = observation;
+        if (phase !== lastPhase) {
+          if (phase === 'awaiting-prompt') addLog(`[Ảnh ${promptIndex}] Đang xác minh prompt vừa gửi đã xuất hiện trong đúng cuộc hội thoại; chưa lấy ảnh cũ.`, 'info');
+          else if (phase === 'awaiting-image') addLog(`[Ảnh ${promptIndex}] Đã nhận đúng lượt prompt vừa gửi. Chỉ theo dõi ảnh trong câu trả lời của lượt này.`, 'success');
+          lastPhase = phase;
+        }
         if (!candidate) {
-          if (++diagnosticPoll % 20 === 0) addLog(`[Ảnh ${promptIndex}] Vẫn chờ kết quả: ${turns.length} lượt chat, ${turns.filter(t => t.authorRole === 'assistant').length} lượt ChatGPT, ${turns.reduce((n, t) => n + t.mediaCount, 0)} phần tử ảnh, ${turns.reduce((n, t) => n + t.images.length, 0)} ảnh sẵn sàng.`, 'info');
+          if (++diagnosticPoll % 20 === 0) {
+            addLog(`[Ảnh ${promptIndex}] ${phase === 'awaiting-prompt' ? 'Chưa nhận diện được lượt prompt vừa gửi' : 'Đã khóa đúng prompt, đang chờ ảnh hoàn chỉnh'}: ${diagnostics.turns} lượt chat, ${diagnostics.assistantTurns} lượt ChatGPT, ${diagnostics.media} phần tử ảnh, ${diagnostics.readyImages} ảnh sẵn sàng.`, 'info');
+            if (!diagnostics.turns || !diagnostics.readyImages) {
+              const structure = await requestTracker.diagnostics();
+              addLog(`[Ảnh ${promptIndex}] Cấu trúc tab đã khóa: ${structure.mainRoots} vùng nội dung, ${structure.turnMarkers} dấu lượt chat, ${structure.readyImageElements} ảnh lớn đã tải, ${structure.canvases} canvas, ${structure.frames} iframe.`, 'info');
+            }
+          }
           continue;
         }
 
@@ -1290,19 +1287,22 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
         const imagePath = path.join(targetFolder, `${promptIndex}.png`);
         addLog(`[Ảnh ${promptIndex}] Đã tìm thấy ảnh trong lượt trả lời mới của ChatGPT. Đang tải ảnh về máy...`, "info");
         try {
-          const savedAs = await saveChatGptImage(context, image, src, imagePath);
-          if (await filesAreIdentical(refImagePath, imagePath) || await filesAreIdentical(logoImagePath, imagePath)) {
-            await fs.unlink(imagePath).catch(() => {});
-            addLog(`[Ảnh ${promptIndex}] Đã loại ảnh trùng với ảnh mẫu; tiếp tục chờ kết quả ChatGPT.`, "warning");
-            continue;
-          }
+          const savedAs = await saveChatGptImage(context, image, src, imagePath, { beforeCommit: async temporaryPath => {
+            await requestTracker.validateCandidate(candidate);
+            if (await filesAreIdentical(refImagePath, temporaryPath) || await filesAreIdentical(logoImagePath, temporaryPath)) {
+              throw new Error('Ảnh trùng ảnh mẫu hoặc logo; không ghi đè ảnh kết quả.');
+            }
+          } });
           addLog(`[Ảnh ${promptIndex}] Đã lưu ${promptIndex}.png (${savedAs === "original" ? "PNG theo độ phân giải ảnh nguồn" : "ảnh hiển thị kết quả ChatGPT"}) tại ${targetFolder}.`, "success");
           foundImage = true;
           break;
         } catch (downloadErr) {
+          if (downloadErr.code === 'CHATGPT_REQUEST_MISMATCH') throw downloadErr;
           addLog(`[Ảnh ${promptIndex}] Chưa lưu được ảnh: ${downloadErr.message}, đang đợi...`, "warning");
-        }
+        } finally { await image.dispose().catch(() => {}); }
       } catch (err) {
+        if (err.code === 'CHATGPT_REQUEST_MISMATCH') throw err;
+        lastReadError = err.message;
         addLog(`[Ảnh ${promptIndex}] Không thể kiểm tra ảnh mới: ${err.message}`, "warning");
       }
     }
@@ -1372,7 +1372,7 @@ async function runSingleImageAutomationInBackground(port, refImagePath, logoImag
       return path.join(targetFolder, `${promptIndex}.png`);
 
     } else {
-      throw new Error(`Ảnh ${promptIndex}: chưa tìm thấy/lưu được ảnh kết quả sau 5 phút. Kiểm tra lượt trả lời ChatGPT và thử lại từ prompt này.`);
+      throw new Error(`Ảnh ${promptIndex}: ${lastPhase === 'awaiting-prompt' ? 'chưa xác minh được lượt prompt vừa gửi trên giao diện ChatGPT' : 'chưa lưu được ảnh hoàn chỉnh của đúng lượt prompt'} sau 5 phút. Giữ nguyên tab và ảnh để kiểm tra, không cần gửi lại prompt ngay.${lastReadError ? ` Chi tiết đọc trang: ${lastReadError}` : ''}`);
     }
 
   } catch (err) {

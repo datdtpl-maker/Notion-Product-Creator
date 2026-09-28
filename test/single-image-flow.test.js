@@ -16,7 +16,8 @@ function freePort() {
   });
 }
 
-test('single-image API attaches the reference, saves one result and never starts prompt 2', { timeout: 45000 }, async t => {
+for (const layout of ['marked', 'plain']) {
+test(`single-image API saves the correct numbered result (${layout} layout) and never starts prompt 2 automatically`, { timeout: 60000 }, async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'npc-single-'));
   const profile = path.join(root, 'profile');
   const port = await freePort();
@@ -32,7 +33,7 @@ test('single-image API attaches the reference, saves one result and never starts
     await fs.rm(root, { recursive: true, force: true });
   });
   const page = context.pages()[0];
-  await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: `
+  await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `
     <main></main><form onsubmit="return false"><input type="file"><textarea id="prompt-textarea"></textarea>
     <button data-testid="stop-button" type="button">Đang tạo</button><button data-testid="send-button" type="button">Gửi</button></form>
     <script>
@@ -40,12 +41,24 @@ test('single-image API attaches the reference, saves one result and never starts
       document.querySelector('input').onchange = event => { window.uploads += event.target.files.length; };
       document.querySelector('[data-testid="send-button"]').onclick = () => {
         window.sent++;
-        const user = document.createElement('article'); user.dataset.turn = 'user'; user.id = 'request-' + window.sent;
+        const user = document.createElement('${layout === 'marked' ? 'article' : 'div'}');
+        if (${layout === 'marked'}) user.dataset.turn = 'user';
+        user.id = 'request-' + window.sent;
         user.textContent = document.querySelector('textarea').value;
-        const assistant = document.createElement('article'); assistant.dataset.turn = 'assistant'; assistant.id = 'result-' + window.sent;
+        const assistant = document.createElement('${layout === 'marked' ? 'article' : 'div'}');
+        if (${layout === 'marked'}) assistant.dataset.turn = 'assistant';
+        assistant.id = 'result-' + window.sent;
         const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
         canvas.getContext('2d').fillStyle = 'red'; canvas.getContext('2d').fillRect(0, 0, 512, 512);
-        assistant.append(canvas); document.querySelector('main').append(user, assistant);
+        assistant.append(canvas);
+        if (${layout === 'plain'}) {
+          const edit = document.createElement('button'); edit.textContent = 'Chỉnh sửa';
+          const share = document.createElement('button'); share.setAttribute('aria-label', 'Chia sẻ');
+          const feedback = document.createElement('button'); feedback.setAttribute('aria-label', 'Good response');
+          assistant.append(edit, share, feedback);
+        }
+        document.querySelector('main').append(user, assistant);
+        document.querySelector('[data-testid="stop-button"]')?.remove();
         history.pushState({}, '', '/c/test-product/updated-by-chatgpt');
         document.querySelector('textarea').value = '';
       };
@@ -110,7 +123,7 @@ test('single-image API attaches the reference, saves one result and never starts
     if (job.status !== 'running') break;
     await new Promise(resolve => setTimeout(resolve, 200));
   }
-  assert.equal(job.status, 'completed', job.error);
+  assert.equal(job.status, 'completed', job.error || JSON.stringify(await (await fetch(`${base}/api/logs`)).json()));
   assert.deepEqual(job.completed, [1]);
   const target = path.join(root, 'products', 'Test product');
   assert.equal(job.savedPath, path.join(target, '1.png'));
@@ -121,4 +134,22 @@ test('single-image API attaches the reference, saves one result and never starts
   assert.equal(await page.evaluate(() => window.sent), 1);
   assert.equal(await page.evaluate(() => window.uploads), 1);
   assert.equal(context.pages().length, 1);
+
+  // A deliberate second click must save 2.png in the same folder, text only.
+  await post('/api/chrome/generate-single-image', {
+    productName: 'Test product', driveParent: path.join(root, 'products'), promptIndex: 2,
+    promptText: 'Tạo ảnh thứ hai trong cùng cuộc trò chuyện', referenceImage
+  });
+  for (let attempt = 0; attempt < 100; attempt++) {
+    job = await (await fetch(`${base}/api/chrome/image-job`)).json();
+    if (job.status !== 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  assert.equal(job.status, 'completed', job.error);
+  assert.deepEqual(job.completed, [2]);
+  assert.equal(job.savedPath, path.join(target, '2.png'));
+  assert.deepEqual((await fs.readdir(target)).sort(), ['1.png', '2.png', 'reference_image.png']);
+  assert.equal(await page.evaluate(() => window.sent), 2);
+  assert.equal(await page.evaluate(() => window.uploads), 1);
 });
+}
