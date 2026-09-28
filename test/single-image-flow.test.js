@@ -50,7 +50,16 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
         assistant.id = 'result-' + window.sent;
         const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
         canvas.getContext('2d').fillStyle = 'red'; canvas.getContext('2d').fillRect(0, 0, 512, 512);
-        assistant.append(canvas);
+        if (${layout === 'marked'} && window.sent === 1) {
+          assistant.innerHTML = '<div aria-busy="true">Generating image</div>';
+          window.finishImage = () => {
+            assistant.replaceChildren(canvas);
+            document.querySelector('[data-testid="stop-button"]')?.remove();
+          };
+        } else {
+          assistant.append(canvas);
+          document.querySelector('[data-testid="stop-button"]')?.remove();
+        }
         if (${layout === 'plain'}) {
           const edit = document.createElement('button'); edit.textContent = 'Chỉnh sửa';
           const share = document.createElement('button'); share.setAttribute('aria-label', 'Chia sẻ');
@@ -58,8 +67,7 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
           assistant.append(edit, share, feedback);
         }
         document.querySelector('main').append(user, assistant);
-        document.querySelector('[data-testid="stop-button"]')?.remove();
-        history.pushState({}, '', '/c/test-product/updated-by-chatgpt');
+        history.replaceState({}, '', location.pathname + '/updated-by-chatgpt');
         document.querySelector('textarea').value = '';
       };
     </script>` }));
@@ -117,6 +125,20 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
     promptText: 'Tạo một ảnh sản phẩm', referenceImage,
     autoContinue: true, prompts: ['one', 'two', 'three', 'four']
   });
+  if (layout === 'marked') {
+    let recognized = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const logs = await (await fetch(`${base}/api/logs`)).json();
+      recognized = logs.some(log => log.message.includes('Đã nhận đúng lượt prompt vừa gửi'));
+      if (recognized) break;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    assert.equal(recognized, true, 'request must be locked while image is still generating');
+    await page.evaluate(() => {
+      history.replaceState({}, '', '/c/server-assigned-product');
+      window.finishImage();
+    });
+  }
   let job;
   for (let attempt = 0; attempt < 100; attempt++) {
     job = await (await fetch(`${base}/api/chrome/image-job`)).json();

@@ -30,6 +30,8 @@ Bộ nhận diện hỗ trợ dấu nhận diện lượt chat, nhãn người n
 
 Nhật ký phân biệt: chưa nhận diện prompt đã gửi, đã khóa prompt và chờ ảnh, hoặc đã tìm thấy ảnh và đang lưu. Giao diện ChatGPT có thể thay đổi; kiểm thử mô phỏng không thay thế kiểm tra trên tài khoản/máy thực tế.
 
+URL được ChatGPT cập nhật sau khi gửi không còn tự động bị coi là đổi cuộc trò chuyện: tool đối chiếu danh tính tin nhắn (message ID hoặc phần tử prompt đã khóa) trong đúng tab trước khi tiếp tục. Trùng nội dung prompt hoặc trùng số thứ tự lượt chat không đủ để chấp nhận một cuộc hội thoại khác. Tải lại trang hay thay nội dung cuộc hội thoại vẫn bị chặn.
+
 ## Build
 
 ```bash

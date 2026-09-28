@@ -124,19 +124,25 @@ test('rejects another prompt and refuses commit if navigation happens during dow
   await fs.writeFile(output, 'existing image must survive');
   await assert.rejects(saveChatGptImage(page.context(), result.candidate.image, result.candidate.src, output, {
     beforeCommit: async () => {
-      await page.evaluate(() => history.pushState({}, '', '/c/product-b'));
+      await page.evaluate(() => {
+        document.querySelector('#messages > div p').textContent = 'A different conversation';
+        history.pushState({}, '', '/c/product-b');
+      });
       await tracker.validateCandidate(result.candidate);
     }
   }), { code: 'CHATGPT_REQUEST_MISMATCH' });
   assert.equal(await fs.readFile(output, 'utf8'), 'existing image must survive');
   assert.deepEqual(await fs.readdir(folder), ['1.png']);
-  await page.evaluate(() => history.pushState({}, '', '/c/product-a'));
+  await page.evaluate(prompt => {
+    document.querySelector('#messages > div p').textContent = prompt;
+    history.pushState({}, '', '/c/product-a');
+  }, prompt);
   await addPlainTurns(page, 'Another user request');
   await assert.rejects(tracker.poll(), { code: 'CHATGPT_REQUEST_MISMATCH' });
   await result.candidate.image.dispose();
 });
 
-test('permits a new chat to acquire its conversation ID, but then locks that ID', async t => {
+test('permits a new chat to acquire its conversation ID, but rejects a replaced conversation', async t => {
   const page = await fixture(t);
   await page.evaluate(() => history.pushState({}, '', '/'));
   const tracker = await createImageRequestTracker(page, prompt);
@@ -145,7 +151,81 @@ test('permits a new chat to acquire its conversation ID, but then locks that ID'
   const result = await tracker.poll();
   assert.equal(result.conversationId, 'new-product');
   await result.candidate.image.dispose();
-  await page.evaluate(() => history.pushState({}, '', '/c/another-product'));
+  await page.evaluate(() => {
+    document.querySelector('#messages').replaceChildren();
+    history.pushState({}, '', '/c/another-product');
+  });
+  await assert.rejects(tracker.poll(), { code: 'CHATGPT_REQUEST_MISMATCH' });
+});
+
+test('keeps waiting and saves 1.png when ChatGPT replaces a provisional URL during image generation', async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => history.replaceState({}, '', '/'));
+  const tracker = await createImageRequestTracker(page, prompt);
+  await page.locator('#messages').evaluate((el, prompt) => {
+    el.innerHTML = '<article data-turn="user" data-message-id="sent-message"><p></p></article><article data-turn="assistant" data-message-id="reply-message"><div aria-busy="true">Generating image</div></article>';
+    el.querySelector('p').textContent = prompt;
+    history.replaceState({}, '', '/c/provisional-id');
+  }, prompt);
+  assert.equal((await tracker.poll()).phase, 'awaiting-image');
+  await page.evaluate(() => history.replaceState({}, '', '/c/server-assigned-id'));
+  assert.equal((await tracker.poll()).phase, 'awaiting-image', 'URL remap must not stop the same request');
+  await page.locator('[data-turn="assistant"]').evaluate(el => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
+    canvas.getContext('2d').fillRect(0, 0, 512, 512); el.replaceChildren(canvas);
+  });
+  const result = await tracker.poll();
+  assert.equal(result.phase, 'image-ready');
+  assert.equal(result.conversationId, 'server-assigned-id');
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'npc-url-remap-'));
+  t.after(() => fs.rm(folder, { recursive: true, force: true }));
+  await saveChatGptImage(page.context(), result.candidate.image, result.candidate.src, path.join(folder, '1.png'), {
+    beforeCommit: () => tracker.validateCandidate(result.candidate)
+  });
+  assert.deepEqual(await fs.readdir(folder), ['1.png']);
+  await result.candidate.image.dispose();
+});
+
+test('accepts URL remap when React recreates the same message ID, never just the same turn ordinal or prompt', async t => {
+  const page = await fixture(t);
+  const tracker = await createImageRequestTracker(page, prompt);
+  await page.locator('#messages').evaluate((el, prompt) => {
+    el.innerHTML = '<article data-turn="user" data-testid="conversation-turn-0" data-message-id="message-a"></article><article data-turn="assistant"><div aria-busy="true"></div></article>';
+    el.firstChild.textContent = prompt;
+  }, prompt);
+  assert.equal((await tracker.poll()).phase, 'awaiting-image');
+  await page.evaluate(() => {
+    const user = document.querySelector('[data-turn="user"]'); user.replaceWith(user.cloneNode(true));
+    history.replaceState({}, '', '/c/product-canonical');
+  });
+  assert.equal((await tracker.poll()).phase, 'awaiting-image');
+  // Same prompt and turn ordinal in another chat are NOT the same message.
+  await page.evaluate(() => {
+    document.querySelector('[data-turn="user"]').setAttribute('data-message-id', 'message-b');
+    history.pushState({}, '', '/c/other-chat');
+  });
+  await assert.rejects(tracker.poll(), { code: 'CHATGPT_REQUEST_MISMATCH' });
+});
+
+test('URL-only remap before atomic save is allowed, but a later SPA replacement is not', async t => {
+  const page = await fixture(t);
+  const tracker = await createImageRequestTracker(page, prompt);
+  await addPlainTurns(page);
+  const result = await tracker.poll();
+  await page.evaluate(() => history.replaceState({}, '', '/c/canonical'));
+  await tracker.validateCandidate(result.candidate);
+  // SPA navigation can update the URL first and replace the contents later.
+  await page.locator('#messages').evaluate(el => { el.innerHTML = el.innerHTML; });
+  await assert.rejects(tracker.poll(), { code: 'CHATGPT_REQUEST_MISMATCH' });
+  await result.candidate.image.dispose();
+});
+
+test('still rejects reloads and URL changes before the prompt is sent', async t => {
+  const page = await fixture(t);
+  const tracker = await createImageRequestTracker(page, prompt);
+  await page.evaluate(() => history.replaceState({}, '', '/c/another-chat'));
+  await assert.rejects(tracker.assertConversation({ beforeSend: true }), { code: 'CHATGPT_REQUEST_MISMATCH' });
+  await page.reload();
   await assert.rejects(tracker.poll(), { code: 'CHATGPT_REQUEST_MISMATCH' });
 });
 
