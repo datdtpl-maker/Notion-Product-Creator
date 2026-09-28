@@ -7,8 +7,46 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const { getChatGptConversationTurns, saveChatGptImage } = require('../lib/chatgpt-generated-image');
 const { createImageRequestTracker } = require('../lib/chatgpt-image-request');
+const { addSearchLayoutTurn } = require('./fixtures/chatgpt-search-layout');
 
 const prompt = 'Tạo ảnh vuông sản phẩm Vitamin K. Giữ đúng nhãn sản phẩm và logo.';
+
+test('live search layout separates h4 messages, excludes references and saves each prompt as 1-4.png', async t => {
+  const page = await fixture(t);
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'npc-live-layout-'));
+  t.after(() => fs.rm(folder, { recursive: true, force: true }));
+  for (let index = 1; index <= 4; index++) {
+    const text = `${prompt} Prompt ${index}`;
+    const tracker = await createImageRequestTracker(page, text);
+    await addSearchLayoutTurn(page, text, { index, ready: false });
+    const waiting = await tracker.poll();
+    assert.equal(waiting.phase, 'awaiting-image');
+    assert.equal(waiting.diagnostics.turns, index * 2, 'one search turn contains two separate messages');
+    await page.locator('[aria-busy]').evaluate(el => el.removeAttribute('aria-busy'));
+    const result = await tracker.poll();
+    assert.equal(result.phase, 'image-ready');
+    assert.equal(result.candidate.completedCard, true, 'new Edit/Share labels identify a finished card');
+    assert.equal(result.candidate.turnKey, `id:assistant-${index}`);
+    await saveChatGptImage(page.context(), result.candidate.image, result.candidate.src, path.join(folder, `${index}.png`), {
+      beforeCommit: () => tracker.validateCandidate(result.candidate)
+    });
+    assert.equal(await result.candidate.image.getAttribute('alt'), 'Generated image 1');
+    await result.candidate.image.dispose();
+  }
+  assert.deepEqual((await fs.readdir(folder)).sort(), ['1.png', '2.png', '3.png', '4.png']);
+});
+
+test('search layout preserves the actual message identity on URL remap and rejects a later user turn', async t => {
+  const page = await fixture(t);
+  const tracker = await createImageRequestTracker(page, prompt);
+  await addSearchLayoutTurn(page, prompt, { ready: false });
+  assert.equal((await tracker.poll()).phase, 'awaiting-image');
+  await page.locator('[data-content-search-turn-key]').evaluate(el => el.replaceWith(el.cloneNode(true)));
+  await page.evaluate(() => history.replaceState({}, '', '/c/canonical-chat'));
+  assert.equal((await tracker.poll()).phase, 'awaiting-image');
+  await addSearchLayoutTurn(page, 'Another prompt', { index: 2 });
+  await assert.rejects(tracker.poll(), { code: 'CHATGPT_REQUEST_MISMATCH' });
+});
 
 async function fixture(t) {
   const browser = await chromium.launch({ ...(existsSync(chromium.executablePath()) ? {} : { channel: 'chrome' }), headless: true });

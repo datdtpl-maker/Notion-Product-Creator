@@ -30,6 +30,8 @@ Bộ nhận diện hỗ trợ dấu nhận diện lượt chat, nhãn người n
 
 Nhật ký phân biệt: chưa nhận diện prompt đã gửi, đã khóa prompt và chờ ảnh, hoặc đã tìm thấy ảnh và đang lưu. Giao diện ChatGPT có thể thay đổi; kiểm thử mô phỏng không thay thế kiểm tra trên tài khoản/máy thực tế.
 
+Từ v1.2.22, tool nhận diện cả bố cục ChatGPT mới dùng tiêu đề `h4`, mã tin nhắn tìm kiếm và khối `display: contents`. Một khối tìm kiếm có thể chứa cả prompt lẫn câu trả lời; tool tách riêng từng người nói, không lấy ảnh đính kèm làm kết quả. Đã kiểm chứng nhận và lưu một ảnh kết quả thật ở độ phân giải nguồn trên Windows, cùng kiểm thử tự động lưu `1.png`–`4.png`. macOS dùng cùng logic nhưng vẫn cần kiểm tra trên tài khoản/máy thực tế.
+
 URL được ChatGPT cập nhật sau khi gửi không còn tự động bị coi là đổi cuộc trò chuyện: tool đối chiếu danh tính tin nhắn (message ID hoặc phần tử prompt đã khóa) trong đúng tab trước khi tiếp tục. Trùng nội dung prompt hoặc trùng số thứ tự lượt chat không đủ để chấp nhận một cuộc hội thoại khác. Tải lại trang hay thay nội dung cuộc hội thoại vẫn bị chặn.
 
 ## Build

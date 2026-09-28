@@ -7,6 +7,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { addSearchLayoutTurn } = require('./fixtures/chatgpt-search-layout');
 
 function freePort() {
   return new Promise(resolve => {
@@ -16,7 +17,7 @@ function freePort() {
   });
 }
 
-for (const layout of ['marked', 'plain']) {
+for (const layout of ['marked', 'plain', 'search']) {
 test(`single-image API saves the correct numbered result (${layout} layout) and never starts prompt 2 automatically`, { timeout: 60000 }, async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'npc-single-'));
   const profile = path.join(root, 'profile');
@@ -33,14 +34,26 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
     await fs.rm(root, { recursive: true, force: true });
   });
   const page = context.pages()[0];
+  await page.exposeFunction('appendSearchTurn', (prompt, index) => addSearchLayoutTurn(page, prompt, { index, ready: index !== 1 }));
   await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `
     <main></main><form onsubmit="return false"><input type="file"><textarea id="prompt-textarea"></textarea>
     <button data-testid="stop-button" type="button">Đang tạo</button><button data-testid="send-button" type="button">Gửi</button></form>
     <script>
       window.sent = 0; window.uploads = 0;
       document.querySelector('input').onchange = event => { window.uploads += event.target.files.length; };
-      document.querySelector('[data-testid="send-button"]').onclick = () => {
+      document.querySelector('[data-testid="send-button"]').onclick = async () => {
         window.sent++;
+        if (${layout === 'search'}) {
+          await window.appendSearchTurn(document.querySelector('textarea').value, window.sent);
+          window.finishImage = () => {
+            document.querySelector('[aria-busy]')?.removeAttribute('aria-busy');
+            document.querySelector('[data-testid="stop-button"]')?.remove();
+          };
+          if (window.sent > 1) window.finishImage();
+          history.replaceState({}, '', location.pathname + '/updated-by-chatgpt');
+          document.querySelector('textarea').value = '';
+          return;
+        }
         const user = document.createElement('${layout === 'marked' ? 'article' : 'div'}');
         if (${layout === 'marked'}) user.dataset.turn = 'user';
         user.id = 'request-' + window.sent;
@@ -125,7 +138,7 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
     promptText: 'Tạo một ảnh sản phẩm', referenceImage,
     autoContinue: true, prompts: ['one', 'two', 'three', 'four']
   });
-  if (layout === 'marked') {
+  if (layout !== 'plain') {
     let recognized = false;
     for (let attempt = 0; attempt < 100; attempt++) {
       const logs = await (await fetch(`${base}/api/logs`)).json();
@@ -157,21 +170,23 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
   assert.equal(await page.evaluate(() => window.uploads), 1);
   assert.equal(context.pages().length, 1);
 
-  // A deliberate second click must save 2.png in the same folder, text only.
-  await post('/api/chrome/generate-single-image', {
-    productName: 'Test product', driveParent: path.join(root, 'products'), promptIndex: 2,
-    promptText: 'Tạo ảnh thứ hai trong cùng cuộc trò chuyện', referenceImage
-  });
-  for (let attempt = 0; attempt < 100; attempt++) {
-    job = await (await fetch(`${base}/api/chrome/image-job`)).json();
-    if (job.status !== 'running') break;
-    await new Promise(resolve => setTimeout(resolve, 200));
+  // Each deliberate follow-up click saves only its own number, text only.
+  for (let index = 2; index <= 4; index++) {
+    await post('/api/chrome/generate-single-image', {
+      productName: 'Test product', driveParent: path.join(root, 'products'), promptIndex: index,
+      promptText: `Tạo ảnh thứ ${index} trong cùng cuộc trò chuyện`, referenceImage
+    });
+    for (let attempt = 0; attempt < 100; attempt++) {
+      job = await (await fetch(`${base}/api/chrome/image-job`)).json();
+      if (job.status !== 'running') break;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    assert.equal(job.status, 'completed', job.error);
+    assert.deepEqual(job.completed, [index]);
+    assert.equal(job.savedPath, path.join(target, `${index}.png`));
+    assert.deepEqual((await fs.readdir(target)).sort(), [...Array.from({ length: index }, (_, i) => `${i + 1}.png`), 'reference_image.png']);
+    assert.equal(await page.evaluate(() => window.sent), index);
+    assert.equal(await page.evaluate(() => window.uploads), 1);
   }
-  assert.equal(job.status, 'completed', job.error);
-  assert.deepEqual(job.completed, [2]);
-  assert.equal(job.savedPath, path.join(target, '2.png'));
-  assert.deepEqual((await fs.readdir(target)).sort(), ['1.png', '2.png', 'reference_image.png']);
-  assert.equal(await page.evaluate(() => window.sent), 2);
-  assert.equal(await page.evaluate(() => window.uploads), 1);
 });
 }
