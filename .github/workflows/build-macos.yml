@@ -93,6 +93,9 @@ jobs:
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v4
+
       - name: Download Windows installer
         uses: actions/download-artifact@v4
         with:
@@ -128,4 +131,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes "Sửa lỗi lưu nhầm canvas hiệu ứng khi ChatGPT còn Creating image. Chặn hoàn toàn tải canvas và chụp khung chờ; chỉ lưu ảnh đã tải có nút thao tác hoàn chỉnh, không còn nút Dừng hoặc tiến độ tạo ảnh. Kiểm tra lại trạng thái trước khi ghi file; từ chối ảnh trống và giữ file cũ khi xác minh thất bại. Kiểm thử API xác nhận ở 31% chưa tạo file/chưa báo thành công, sau khi có ảnh hoàn chỉnh mới lưu đúng 1.png đến 4.png. Đã kiểm chứng tải ảnh kết quả thật 1254 × 1254 trên Windows. macOS dùng cùng logic và được kiểm thử tự động; chưa thử trực tiếp tài khoản ChatGPT trên máy Mac. Giữ nguyên profile, cookie, API key và cơ chế mỗi prompt một ảnh."
+            --notes-file "docs/releases/${GITHUB_REF_NAME}.md"

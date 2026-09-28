@@ -123,12 +123,22 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // --- Functions ---
+  let completionReturnFocus = null;
+
+  function updateNotionConfigStatus() {
+    const badge = document.getElementById('notion-status');
+    badge.className = `status-badge ${notionApiKeyConfigured ? 'configured' : 'offline'}`;
+    badge.querySelector('.status-text').textContent = notionApiKeyConfigured ? 'Notion: Đã lưu token' : 'Notion: Chưa cấu hình';
+  }
 
   function closeCompletionPopup() {
     completionModal.hidden = true;
+    document.querySelector('.app-container').inert = false;
+    if (completionReturnFocus?.isConnected) completionReturnFocus.focus();
   }
 
-  function showCompletionPopup({ title, message, notionUrl, notionLabel = "Mở trên Notion" }) {
+  function showCompletionPopup({ title, message, notionUrl, notionLabel = "Mở trên Notion", returnFocus }) {
+    if (completionModal.hidden) completionReturnFocus = returnFocus || document.activeElement;
     completionTitle.textContent = title;
     completionMessage.textContent = message;
     completionNotionLink.hidden = !notionUrl;
@@ -137,6 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
       completionNotionLink.textContent = notionLabel;
     }
     completionModal.hidden = false;
+    document.querySelector('.app-container').inert = true;
     btnCloseCompletion.focus();
   }
 
@@ -233,7 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setupSystemConfigToggle() {
-    const collapsed = localStorage.getItem("systemConfigCollapsed") === "true";
+    const collapsed = localStorage.getItem("systemConfigCollapsed") !== "false";
     setSystemConfigCollapsed(collapsed, { persist: false });
     btnToggleSystemConfig.addEventListener("click", () => {
       setSystemConfigCollapsed(!systemConfigCard.classList.contains("is-collapsed"));
@@ -246,6 +257,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !completionModal.hidden) closeCompletionPopup();
+    if (event.key === "Tab" && !completionModal.hidden) {
+      const first = completionNotionLink.hidden ? btnCloseCompletion : completionNotionLink;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        btnCloseCompletion.focus();
+      } else if (!event.shiftKey && document.activeElement === btnCloseCompletion) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
   });
 
   // Dynamically calculate and display the auto-save subfolder path
@@ -273,6 +294,10 @@ document.addEventListener("DOMContentLoaded", () => {
       
       openAiApiKeyConfigured = Boolean(config.openAiApiKeyConfigured);
       notionApiKeyConfigured = Boolean(config.notionApiKeyConfigured);
+      updateNotionConfigStatus();
+      if (localStorage.getItem('systemConfigCollapsed') === null && (!openAiApiKeyConfigured || !notionApiKeyConfigured)) {
+        setSystemConfigCollapsed(false, { persist: false });
+      }
       openaiKeyInput.value = "";
       notionKeyInput.value = "";
       openaiKeyInput.placeholder = openAiApiKeyConfigured ? "Đã lưu an toàn — nhập mới để thay đổi" : "Nhập OpenAI API Key";
@@ -320,6 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateTargetFolderDisplay();
       await refreshGoogleDriveStatus();
     } catch (err) {
+      document.querySelector('#notion-status .status-text').textContent = 'Không tải được cấu hình';
       console.error("Lỗi load config:", err);
     }
   }
@@ -358,6 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const result = await response.json();
       openAiApiKeyConfigured = Boolean(result.config?.openAiApiKeyConfigured);
       notionApiKeyConfigured = Boolean(result.config?.notionApiKeyConfigured);
+      updateNotionConfigStatus();
       googleDriveClientSecretConfigured = Boolean(result.config?.googleDriveClientSecretConfigured);
       lastSavedGoogleDriveParentUrl = productDriveUrlInput.value.trim();
       if (config.openAiApiKey) {
@@ -565,13 +592,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const header = document.getElementById(`prompt-header-${i}`);
       const content = document.getElementById(`prompt-content-${i}`);
       
-      header.addEventListener("click", (e) => {
-        // Prevent click events from input fields inside collapse headers if any
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") {
-          return;
-        }
-
+      header.addEventListener("click", () => {
         const isActive = header.classList.contains("active");
+        header.setAttribute('aria-expanded', String(!isActive));
         
         // Toggle this one
         if (isActive) {
@@ -610,7 +633,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnToggleExpandArticle) {
       btnToggleExpandArticle.addEventListener("click", () => {
         const expanded = articleContentTextarea.classList.toggle("expanded");
-        btnToggleExpandArticle.textContent = expanded ? "🔍 Thu nhỏ" : "🔍 Phóng to";
+        btnToggleExpandArticle.textContent = expanded ? "Thu nhỏ" : "Phóng to";
+        btnToggleExpandArticle.setAttribute('aria-expanded', String(expanded));
         appendLocalLog(expanded ? "Đã phóng to ô soạn thảo bài viết." : "Đã thu nhỏ ô soạn thảo bài viết.", "info");
       });
     }
@@ -622,7 +646,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const textarea = document.getElementById(`prompt-${index}`);
         if (textarea) {
           const expanded = textarea.classList.toggle("expanded");
-          btn.textContent = expanded ? "🔍 Thu nhỏ" : "🔍 Phóng to";
+          btn.textContent = expanded ? "Thu nhỏ" : "Phóng to";
+          btn.setAttribute('aria-expanded', String(expanded));
           appendLocalLog(expanded ? `Đã phóng to ô nhập Prompt ${index}.` : `Đã thu nhỏ ô nhập Prompt ${index}.`, "info");
         }
       });
@@ -631,24 +656,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Setup Theme Toggle Logic
   function setupThemeToggle() {
-    const savedTheme = localStorage.getItem("theme") || "dark";
+    const savedTheme = localStorage.getItem("theme") || "light";
     if (savedTheme === "light") {
       document.body.classList.add("light-mode");
-      btnThemeToggle.textContent = "🌙 Chế độ Tối";
+      btnThemeToggle.textContent = "Giao diện tối";
     } else {
       document.body.classList.remove("light-mode");
-      btnThemeToggle.textContent = "☀️ Chế độ Sáng";
+      btnThemeToggle.textContent = "Giao diện sáng";
     }
 
     btnThemeToggle.addEventListener("click", () => {
       const isLight = document.body.classList.toggle("light-mode");
       if (isLight) {
         localStorage.setItem("theme", "light");
-        btnThemeToggle.textContent = "🌙 Chế độ Tối";
+        btnThemeToggle.textContent = "Giao diện tối";
         appendLocalLog("Đã chuyển sang giao diện Sáng.", "info");
       } else {
         localStorage.setItem("theme", "dark");
-        btnThemeToggle.textContent = "☀️ Chế độ Sáng";
+        btnThemeToggle.textContent = "Giao diện sáng";
         appendLocalLog("Đã chuyển sang giao diện Tối.", "info");
       }
     });
@@ -824,7 +849,9 @@ document.addEventListener("DOMContentLoaded", () => {
   btnDisconnectGoogleDrive.addEventListener("click", disconnectGoogleDrive);
 
   // Image upload click/drop
-  imageDropzone.addEventListener("click", () => refImageInput.click());
+  imageDropzone.addEventListener("click", (event) => {
+    if (event.target !== refImageInput) refImageInput.click();
+  });
   refImageInput.addEventListener("change", (e) => {
     if (e.target.files.length > 0) {
       handleImageFile(e.target.files[0]);
@@ -871,10 +898,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     btnGenerateContent.disabled = true;
-    articleContentTextarea.value = "Đang tạo nội dung bài viết bằng AI. Vui lòng chờ...";
-    await saveConfig();
+    btnGenerateContent.textContent = "Đang viết bài…";
+    articleContentTextarea.setAttribute('aria-busy', 'true');
 
     try {
+      await saveConfig();
       const res = await fetch("/api/openai/generate-content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -888,10 +916,11 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(data.error);
       }
     } catch (err) {
-      articleContentTextarea.value = `Lỗi tạo bài viết: ${err.message}`;
       alert(`Lỗi: ${err.message}`);
     } finally {
       btnGenerateContent.disabled = false;
+      btnGenerateContent.textContent = "Tạo bài viết bằng AI →";
+      articleContentTextarea.setAttribute('aria-busy', 'false');
     }
   });
 
@@ -961,6 +990,7 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLocalLog("Đã xóa cache sản phẩm. Có thể bắt đầu sản phẩm mới.", "success");
       showCompletionPopup({
         title: "Đã xóa cache sản phẩm",
+        returnFocus: btnClearProductCache,
         message: "Dữ liệu sản phẩm hiện tại đã được làm mới. API key, Notion token, Google Drive OAuth, link thư mục cha, link logo và prompt vẫn được giữ lại."
       });
     } catch (err) {
@@ -1005,6 +1035,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const imageButtons = document.querySelectorAll('.btn-generate-single');
       imageGenerationBusy = true;
+      btn.textContent = `Đang tạo ảnh ${index}…`;
+      btn.setAttribute('aria-busy', 'true');
       imageButtons.forEach(button => { button.disabled = true; });
       appendLocalLog(`============== KHỞI CHẠY TẠO ẢNH ${index} ==============`, "info");
       try {
@@ -1039,7 +1071,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (job.id !== data.jobId) throw new Error('Phiên tạo ảnh đã thay đổi. Kiểm tra nhật ký của tool.');
             if (job.status === 'failed') throw new Error(job.error);
             if (job.status === 'completed') {
-              alert(`Đã lưu ảnh ${index} thành công tại:\n${job.savedPath}\nBạn có thể chọn prompt tiếp theo.`);
+              showCompletionPopup({
+                title: `Đã lưu ảnh ${index}`,
+                returnFocus: document.getElementById(`prompt-header-${index}`),
+                message: `Ảnh đã được lưu tại: ${job.savedPath}. Bạn có thể chọn prompt tiếp theo.`
+              });
               break;
             }
           }
@@ -1051,6 +1087,8 @@ document.addEventListener("DOMContentLoaded", () => {
         alert(`Lỗi: ${err.message}`);
       } finally {
         imageGenerationBusy = false;
+        btn.textContent = `Sinh ảnh ${index}`;
+        btn.setAttribute('aria-busy', 'false');
         await checkChromeStatus();
       }
     });
@@ -1068,10 +1106,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     btnPushNotion.disabled = true;
+    btnPushNotion.textContent = "Đang gửi Notion…";
     appendLocalLog("============== ĐẨY BÀI VIẾT LÊN NOTION ==============", "info");
-    await saveConfig();
 
     try {
+      await saveConfig();
       appendLocalLog("Đang đồng bộ bài viết và thiết lập trạng thái 'Content đang làm' trên Notion...", "info");
       const notionRes = await fetch("/api/notion/sync", {
         method: "POST",
@@ -1087,7 +1126,8 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLocalLog("============== HOÀN THÀNH QUY TRÌNH NOTION ==============", "success");
       showCompletionPopup({
         title: "Đã đẩy bài Website lên Notion",
-        message: "Bài viết đã được lưu trên Notion và chuyển sang trạng thái sẵn sàng đăng website.",
+        returnFocus: btnPushNotion,
+        message: "Bài viết đã được lưu trên Notion. Trạng thái: Content đang làm; Facebook: Chưa đăng.",
         notionUrl: notionData.contentPageUrl,
         notionLabel: "Mở bài Website trên Notion"
       });
@@ -1096,13 +1136,18 @@ document.addEventListener("DOMContentLoaded", () => {
       alert(`Đồng bộ thất bại: ${err.message}`);
     } finally {
       btnPushNotion.disabled = false;
+      btnPushNotion.textContent = "Đẩy bài lên Notion ↗";
     }
   });
 
   document.querySelectorAll(".product-tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       const isFacebook = tab.dataset.productTab === "facebook";
-      document.querySelectorAll(".product-tab").forEach((item) => item.classList.toggle("active", item === tab));
+      document.querySelectorAll(".product-tab").forEach((item) => {
+        item.classList.toggle("active", item === tab);
+        item.setAttribute('aria-pressed', String(item === tab));
+      });
+      document.querySelector('.skip-link').href = isFacebook ? '#facebook-pending-products' : '#prod-name';
       document.getElementById("website-panel").hidden = isFacebook;
       document.getElementById("facebook-panel").hidden = !isFacebook;
       if (isFacebook) loadPendingFacebookProducts();

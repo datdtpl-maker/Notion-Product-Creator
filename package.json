@@ -1,6 +1,6 @@
 {
   "name": "notion-product-creator",
-  "version": "1.2.23",
+  "version": "1.2.24",
   "description": "App tự động hóa viết bài sản phẩm, tạo ảnh ChatGPT và cập nhật Notion",
   "main": "main.js",
   "bin": "server.js",
@@ -8,6 +8,7 @@
     "start": "electron .",
     "dev": "electron .",
     "test": "node --test test/*.test.js",
+    "icons": "node scripts/generate-icons.js",
     "electron-build": "electron-builder build --win --x64 --publish never",
     "electron-build-mac": "electron-builder build --mac dmg --universal --publish never"
   },
@@ -40,11 +41,14 @@
     },
     "mac": {
       "target": "dmg",
+      "icon": "public/app-icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false
     },
     "afterSign": "scripts/notarize.js",
     "nsis": {
+      "installerIcon": "public/favicon.ico",
+      "uninstallerIcon": "public/favicon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Notion Product Creator"

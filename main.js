@@ -16,7 +16,7 @@ if (!hasSingleInstanceLock) {
       width: 1320,
       height: 880,
       title: "Notion Product Creator",
-      icon: path.join(__dirname, "public", "favicon.ico"),
+      icon: path.join(__dirname, "public", process.platform === "win32" ? "favicon.ico" : "app-icon.png"),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

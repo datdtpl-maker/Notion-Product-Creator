@@ -4,46 +4,44 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Notion Product Creator - Khải Hoàn Skincare</title>
+  <link rel="icon" href="favicon.ico">
   <link rel="stylesheet" href="styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
+  <a class="skip-link" href="#prod-name">Đến nội dung làm việc</a>
   <div class="app-container">
     <!-- Header -->
     <header class="app-header">
       <div class="logo-area">
-        <span class="logo-icon">✨</span>
+        <img class="logo-icon" src="app-icon.png" width="42" height="42" alt="" aria-hidden="true">
         <div class="logo-text">
           <h1>Notion Product Creator</h1>
-          <p>Hệ thống tự động hóa Content & Media - Khải Hoàn Skincare</p>
+          <p>KHẢI HOÀN SKINCARE <span aria-hidden="true">/</span> Content workspace</p>
         </div>
       </div>
       <div class="status-indicators">
-        <button id="btn-theme-toggle" class="btn secondary theme-toggle-btn" title="Chuyển chế độ Sáng/Tối">☀️ Chế độ Sáng</button>
-        <div id="chrome-status" class="status-badge offline">
+        <button id="btn-theme-toggle" class="btn secondary theme-toggle-btn" title="Chuyển chế độ Sáng/Tối">Giao diện sáng</button>
+        <div id="chrome-status" class="status-badge offline" role="status">
           <span class="status-dot"></span>
           <span class="status-text">Chrome Debug: Offline</span>
         </div>
-        <div id="notion-status" class="status-badge online">
+        <div id="notion-status" class="status-badge" role="status">
           <span class="status-dot"></span>
-          <span class="status-text">Notion: Sẵn sàng</span>
+          <span class="status-text">Notion: Đang tải cấu hình</span>
         </div>
       </div>
     </header>
 
     <nav class="product-tabs" aria-label="Nhóm Product Creator">
-      <button class="product-tab active" data-product-tab="website">Product Creator Website Derma</button>
-      <button class="product-tab" data-product-tab="facebook">Product Creator Page Facebook</button>
+      <button class="product-tab active" data-product-tab="website" aria-pressed="true" aria-controls="website-panel"><span class="tab-mark" aria-hidden="true">W</span>Website Derma</button>
+      <button class="product-tab" data-product-tab="facebook" aria-pressed="false" aria-controls="facebook-panel"><span class="tab-mark" aria-hidden="true">f</span>Page Facebook</button>
+      <span class="nav-caption">Product Creator</span>
     </nav>
 
-    <div id="website-panel" class="product-panel active">
-    <!-- Main Workspace -->
-    <main class="app-main">
-      <!-- Left Column: Input Form & Settings -->
-      <section class="workspace-section col-left">
         <div id="system-config-card" class="card glass system-config-card">
           <div class="card-header flex-row justify-between">
-            <h3>⚙️ Cấu hình hệ thống</h3>
+            <div class="config-heading"><h2>Cấu hình hệ thống</h2><p class="desc-text">API, Google Drive & logo · Lưu riêng trên máy này</p></div>
             <button id="btn-toggle-system-config" type="button" class="btn secondary system-config-toggle" aria-expanded="true" aria-controls="system-config-body">
               <span id="system-config-toggle-label">Thu nhỏ</span>
               <svg class="system-config-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -53,6 +51,7 @@
           </div>
           <div id="system-config-body" class="card-body">
             <div class="api-credentials">
+              <h3 class="settings-section-title">Tài khoản & kết nối</h3>
               <div class="key-field">
                 <label for="openai-key">OpenAI API Key</label>
                 <div class="input-with-button"><input type="password" id="openai-key" placeholder="sk-proj-..."><button id="btn-check-key" class="btn secondary">Kiểm tra</button></div>
@@ -75,53 +74,70 @@
                   <span id="google-drive-status" class="desc-text" aria-live="polite">Chưa kết nối</span>
                 </div>
               </div>
-              <button id="btn-save-key" class="btn primary w-full">💾 Lưu API Keys trên máy này</button>
+              <button id="btn-save-key" class="btn secondary w-full">Lưu API Keys trên máy này</button>
             </div>
+            <div class="storage-settings">
+            <h3 class="settings-section-title">Thư mục & nhận diện</h3>
             <div class="form-group">
               <label for="drive-parent">Thư mục gốc sản phẩm & ảnh</label>
               <div class="input-with-button">
                 <input type="text" id="drive-parent" readonly placeholder="Chọn thư mục sản phẩm...">
-                <button id="btn-select-folder" class="btn secondary">📂 Duyệt</button>
+                <button id="btn-select-folder" class="btn secondary">Duyệt</button>
               </div>
-            </div>
-            <div class="form-group">
-              <label for="target-product-folder">Thư mục lưu sản phẩm & ảnh</label>
-              <input type="text" id="target-product-folder" readonly placeholder="Tự động tạo theo tên sản phẩm...">
             </div>
             <div class="form-group">
               <label for="product-drive-url">Link Google Drive thư mục cha</label>
               <input type="url" id="product-drive-url" placeholder="Dán link thư mục cha chứa các thư mục sản phẩm">
-              <button id="btn-save-drive-parent-url" type="button" class="btn primary w-full mt-2">💾 Lưu link thư mục cha trên máy này</button>
+              <button id="btn-save-drive-parent-url" type="button" class="btn secondary w-full mt-2">Lưu link thư mục cha trên máy này</button>
               <p class="desc-text">Tool tìm thư mục con theo tên sản phẩm trên máy và lấy đúng link media của thư mục con. Không dùng link <code>local_unsynced</code>.</p>
             </div>
             <div class="form-group">
               <label for="logo-image-url">Link hình logo dùng cho 4 ảnh</label>
               <input type="url" id="logo-image-url" placeholder="Dán link file logo trên Google Drive">
-              <button id="btn-save-logo-image-url" type="button" class="btn primary w-full mt-2">💾 Lưu link hình logo</button>
-              <p class="desc-text">Logo được đính kèm vào cả 4 prompt và yêu cầu đặt ở góc trên bên phải ảnh kết quả.</p>
+              <button id="btn-save-logo-image-url" type="button" class="btn secondary w-full mt-2">Lưu link hình logo</button>
+              <p class="desc-text">Gửi logo cùng ảnh mẫu ở prompt 1, dùng lại trong prompt 2–4. Logo ở góc trên bên phải, cách mép và không che chữ.</p>
             </div>
-            <button id="btn-clear-product-cache" type="button" class="btn secondary w-full">🧹 Xóa cache sản phẩm hiện tại</button>
-            <p class="desc-text">Chỉ xóa dữ liệu sản phẩm và log đang làm; giữ API key, token, Google Drive OAuth và 4 prompt.</p>
+            </div>
           </div>
         </div>
 
-        <div class="card glass mt-4">
+    <div id="website-panel" class="product-panel active">
+    <div class="workspace-intro">
+      <div><p class="eyebrow">WEBSITE DERMA</p><h2>Nội dung sản phẩm</h2><p class="desc-text">Điền thông tin, duyệt bài viết và tạo từng ảnh trước khi gửi Notion.</p></div>
+      <button id="btn-clear-product-cache" type="button" class="btn secondary" title="Xóa dữ liệu sản phẩm hiện tại; giữ nguyên API keys, thư mục và prompt.">+ Sản phẩm mới</button>
+    </div>
+    <main class="app-main">
+      <section class="workspace-section col-left" aria-labelledby="product-info-title">
+        <div class="card glass product-info-card">
           <div class="card-header">
-            <h3>📝 Thông tin sản phẩm</h3>
+            <span class="section-index" aria-hidden="true">01</span><h2 id="product-info-title">Thông tin sản phẩm</h2>
           </div>
           <div class="card-body">
             <div class="form-group">
-              <label for="prod-name">Tên sản phẩm</label>
-              <input type="text" id="prod-name" placeholder="Ví dụ: Drogsan Oximin Clindamycin 1% + Benzoyl Peroxide 5%">
+              <label for="prod-name">Tên sản phẩm <span class="required">*</span></label>
+              <input type="text" id="prod-name" required placeholder="Ví dụ: Drogsan Oximin Gel 15g">
             </div>
             <div class="form-row">
               <div class="form-group col-6">
                 <label for="prod-category">Danh mục</label>
-                <input type="text" id="prod-category" value="Trị mụn">
+                <select id="prod-category">
+                  <option value="Phục hồi da">Phục hồi da</option>
+                  <option value="Trị mụn" selected>Trị Mụn</option>
+                  <option value="Chăm Sóc Da">Chăm Sóc Da</option>
+                  <option value="Chăm Sóc Mắt">Chăm Sóc Mắt</option>
+                  <option value="Chống Nắng">Chống Nắng</option>
+                  <option value="Cơ Thể">Cơ Thể</option>
+                  <option value="Dưỡng Ẩm">Dưỡng Ẩm</option>
+                  <option value="Làm Sạch Da">Làm Sạch Da</option>
+                  <option value="Môi">Môi</option>
+                  <option value="Phụ Kiện">Phụ Kiện</option>
+                  <option value="Thuốc">Thuốc</option>
+                  <option value="Tóc">Tóc</option>
+                </select>
               </div>
               <div class="form-group col-6">
                 <label for="prod-price">Giá bán (VND)</label>
-                <input type="text" id="prod-price" value="350.000">
+                <input type="text" id="prod-price" value="350.000" inputmode="decimal">
               </div>
             </div>
             <div class="form-group">
@@ -131,20 +147,22 @@
             
             <!-- Reference Image Input -->
             <div class="form-group">
-              <label>Ảnh sản phẩm gốc làm mẫu gợi ý</label>
+              <label for="ref-image">Ảnh sản phẩm tham chiếu</label>
               <div class="image-dropzone" id="image-dropzone">
                 <input type="file" id="ref-image" accept="image/*" style="display:none">
-                <div class="dropzone-text" id="dropzone-text">
-                  <span>📸 Kéo thả ảnh hoặc click để tải lên</span>
-                </div>
+                <button type="button" class="dropzone-text" id="dropzone-text" aria-label="Chọn ảnh sản phẩm tham chiếu">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>
+                  <strong>Chọn ảnh hoặc kéo thả vào đây</strong><span>Ảnh mẫu được gửi cùng prompt 1</span>
+                </button>
                 <div class="preview-container" id="preview-container" style="display:none">
-                  <img id="img-preview" src="" alt="Preview">
-                  <button id="btn-remove-img" class="btn-remove">✕</button>
+                  <img id="img-preview" src="" alt="Ảnh sản phẩm tham chiếu đã chọn">
+                  <button id="btn-remove-img" class="btn-remove" aria-label="Gỡ ảnh tham chiếu">✕</button>
                 </div>
               </div>
             </div>
 
-            <button id="btn-generate-content" class="btn primary w-full">✍️ Bắt đầu viết bài viết AI</button>
+            <button id="btn-generate-content" class="btn primary w-full">Tạo bài viết bằng AI <span aria-hidden="true">→</span></button>
+            <p class="desc-text form-note">Chọn danh mục có sẵn. Bạn có thể sửa bài AI trước khi gửi Notion.</p>
           </div>
         </div>
       </section>
@@ -153,132 +171,145 @@
       <section class="workspace-section col-mid">
         <div class="card glass h-full flex-col">
           <div class="card-header flex-row justify-between">
-            <h3>📄 Bài viết sản phẩm (Chuẩn Markdown)</h3>
-            <button id="btn-toggle-expand-article" class="btn text-btn" style="font-size:11px; padding:4px 10px;">🔍 Phóng to</button>
+            <div class="section-heading"><span class="section-index" aria-hidden="true">02</span><h2>Bài viết website</h2></div>
+            <button id="btn-toggle-expand-article" class="btn text-btn" aria-expanded="false" aria-controls="article-content">Phóng to</button>
           </div>
           <div class="card-body flex-grow">
-            <textarea id="article-content" class="editor-textarea" placeholder="Nội dung bài viết sẽ hiển thị ở đây để bạn xem lại và chỉnh sửa..."></textarea>
+            <label for="article-content" class="editor-label">Nội dung bài viết <span>Markdown · Chỉnh sửa trực tiếp</span></label>
+            <textarea id="article-content" class="editor-textarea" placeholder="Bài viết AI sẽ xuất hiện tại đây.&#10;&#10;Xem lại thông tin sản phẩm, chỉnh sửa nội dung rồi gửi lên Notion khi sẵn sàng."></textarea>
             <div class="prompts-accordion mt-4">
             <div class="accordion-header">
-              <h4>🎨 Thư viện & Cấu hình 4 Prompts Tạo Ảnh</h4>
+              <div class="section-heading"><span class="section-index" aria-hidden="true">03</span><h2>Bộ ảnh sản phẩm</h2></div>
+              <p class="desc-text">Mỗi prompt tạo một ảnh. Chỉ báo hoàn thành sau khi ảnh đã lưu.</p>
+              <label for="target-product-folder" class="mt-3">Thư mục lưu ảnh 1–4</label>
+              <input type="text" id="target-product-folder" readonly placeholder="Chọn thư mục trong Cấu hình hệ thống và nhập tên sản phẩm">
             </div>
             <div class="accordion-body">
               <!-- Collapsible Prompt 1 -->
               <div class="prompt-collapse-item">
-                <div class="prompt-collapse-header" id="prompt-header-1">
-                  <div class="header-left">
+                <div class="prompt-toolbar">
+                <button type="button" class="prompt-collapse-header" id="prompt-header-1" aria-expanded="false" aria-controls="prompt-content-1">
+                  <span class="header-left">
                     <span class="prompt-num">1</span>
                     <span class="prompt-title-text" id="prompt-title-disp-1">Ảnh 1: Cover Bán Hàng & Insight</span>
-                  </div>
-                  <span class="collapse-icon">▼</span>
+                  </span>
+                  <span class="collapse-icon" aria-hidden="true">⌄</span>
+                </button>
+                <button class="btn accent btn-generate-single" data-index="1" disabled>Sinh ảnh 1</button>
                 </div>
                 <div class="prompt-collapse-content" id="prompt-content-1">
                   <div class="form-group">
-                    <label>Tiêu đề hiển thị</label>
+                    <label for="prompt-title-1">Tiêu đề hiển thị</label>
                     <input type="text" id="prompt-title-1" placeholder="Nhập tiêu đề...">
                   </div>
                   <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                      <label style="margin-bottom:0;">Nội dung Prompt</label>
-                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="1" style="font-size:10px; padding:2px 6px;">🔍 Phóng to</button>
+                      <label for="prompt-1">Nội dung prompt</label>
+                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="1" aria-expanded="false" aria-controls="prompt-1">Phóng to</button>
                     </div>
                     <textarea id="prompt-1" rows="5" placeholder="Nhập mô tả prompt tạo ảnh bìa..."></textarea>
                   </div>
                   <div style="display:flex; justify-content:flex-end; gap: 10px;">
-                    <button class="btn primary btn-save-prompt" data-index="1">💾 Lưu Prompt 1</button>
-                    <button class="btn accent btn-generate-single" data-index="1" disabled>🎨 Sinh ảnh 1</button>
+                    <button class="btn secondary btn-save-prompt" data-index="1">Lưu prompt 1</button>
                   </div>
                 </div>
               </div>
 
               <!-- Collapsible Prompt 2 -->
               <div class="prompt-collapse-item mt-2">
-                <div class="prompt-collapse-header" id="prompt-header-2">
-                  <div class="header-left">
+                <div class="prompt-toolbar">
+                <button type="button" class="prompt-collapse-header" id="prompt-header-2" aria-expanded="false" aria-controls="prompt-content-2">
+                  <span class="header-left">
                     <span class="prompt-num">2</span>
                     <span class="prompt-title-text" id="prompt-title-disp-2">Ảnh 2: Infographic Thành Phần</span>
-                  </div>
-                  <span class="collapse-icon">▼</span>
+                  </span>
+                  <span class="collapse-icon" aria-hidden="true">⌄</span>
+                </button>
+                <button class="btn accent btn-generate-single" data-index="2" disabled>Sinh ảnh 2</button>
                 </div>
                 <div class="prompt-collapse-content" id="prompt-content-2">
                   <div class="form-group">
-                    <label>Tiêu đề hiển thị</label>
+                    <label for="prompt-title-2">Tiêu đề hiển thị</label>
                     <input type="text" id="prompt-title-2" placeholder="Nhập tiêu đề...">
                   </div>
                   <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                      <label style="margin-bottom:0;">Nội dung Prompt</label>
-                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="2" style="font-size:10px; padding:2px 6px;">🔍 Phóng to</button>
+                      <label for="prompt-2">Nội dung prompt</label>
+                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="2" aria-expanded="false" aria-controls="prompt-2">Phóng to</button>
                     </div>
                     <textarea id="prompt-2" rows="5" placeholder="Nhập mô tả prompt tạo ảnh thành phần..."></textarea>
                   </div>
                   <div style="display:flex; justify-content:flex-end; gap: 10px;">
-                    <button class="btn primary btn-save-prompt" data-index="2">💾 Lưu Prompt 2</button>
-                    <button class="btn accent btn-generate-single" data-index="2" disabled>🎨 Sinh ảnh 2</button>
+                    <button class="btn secondary btn-save-prompt" data-index="2">Lưu prompt 2</button>
                   </div>
                 </div>
               </div>
 
               <!-- Collapsible Prompt 3 -->
               <div class="prompt-collapse-item mt-2">
-                <div class="prompt-collapse-header" id="prompt-header-3">
-                  <div class="header-left">
+                <div class="prompt-toolbar">
+                <button type="button" class="prompt-collapse-header" id="prompt-header-3" aria-expanded="false" aria-controls="prompt-content-3">
+                  <span class="header-left">
                     <span class="prompt-num">3</span>
                     <span class="prompt-title-text" id="prompt-title-disp-3">Ảnh 3: Infographic Công Dụng</span>
-                  </div>
-                  <span class="collapse-icon">▼</span>
+                  </span>
+                  <span class="collapse-icon" aria-hidden="true">⌄</span>
+                </button>
+                <button class="btn accent btn-generate-single" data-index="3" disabled>Sinh ảnh 3</button>
                 </div>
                 <div class="prompt-collapse-content" id="prompt-content-3">
                   <div class="form-group">
-                    <label>Tiêu đề hiển thị</label>
+                    <label for="prompt-title-3">Tiêu đề hiển thị</label>
                     <input type="text" id="prompt-title-3" placeholder="Nhập tiêu đề...">
                   </div>
                   <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                      <label style="margin-bottom:0;">Nội dung Prompt</label>
-                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="3" style="font-size:10px; padding:2px 6px;">🔍 Phóng to</button>
+                      <label for="prompt-3">Nội dung prompt</label>
+                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="3" aria-expanded="false" aria-controls="prompt-3">Phóng to</button>
                     </div>
                     <textarea id="prompt-3" rows="5" placeholder="Nhập mô tả prompt tạo ảnh công dụng..."></textarea>
                   </div>
                   <div style="display:flex; justify-content:flex-end; gap: 10px;">
-                    <button class="btn primary btn-save-prompt" data-index="3">💾 Lưu Prompt 3</button>
-                    <button class="btn accent btn-generate-single" data-index="3" disabled>🎨 Sinh ảnh 3</button>
+                    <button class="btn secondary btn-save-prompt" data-index="3">Lưu prompt 3</button>
                   </div>
                 </div>
               </div>
 
               <!-- Collapsible Prompt 4 -->
               <div class="prompt-collapse-item mt-2">
-                <div class="prompt-collapse-header" id="prompt-header-4">
-                  <div class="header-left">
+                <div class="prompt-toolbar">
+                <button type="button" class="prompt-collapse-header" id="prompt-header-4" aria-expanded="false" aria-controls="prompt-content-4">
+                  <span class="header-left">
                     <span class="prompt-num">4</span>
                     <span class="prompt-title-text" id="prompt-title-disp-4">Ảnh 4: Infographic Hướng Dẫn/Routine</span>
-                  </div>
-                  <span class="collapse-icon">▼</span>
+                  </span>
+                  <span class="collapse-icon" aria-hidden="true">⌄</span>
+                </button>
+                <button class="btn accent btn-generate-single" data-index="4" disabled>Sinh ảnh 4</button>
                 </div>
                 <div class="prompt-collapse-content" id="prompt-content-4">
                   <div class="form-group">
-                    <label>Tiêu đề hiển thị</label>
+                    <label for="prompt-title-4">Tiêu đề hiển thị</label>
                     <input type="text" id="prompt-title-4" placeholder="Nhập tiêu đề...">
                   </div>
                   <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                      <label style="margin-bottom:0;">Nội dung Prompt</label>
-                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="4" style="font-size:10px; padding:2px 6px;">🔍 Phóng to</button>
+                      <label for="prompt-4">Nội dung prompt</label>
+                      <button class="btn text-btn btn-toggle-expand-prompt" data-index="4" aria-expanded="false" aria-controls="prompt-4">Phóng to</button>
                     </div>
                     <textarea id="prompt-4" rows="5" placeholder="Nhập mô tả prompt tạo ảnh hướng dẫn..."></textarea>
                   </div>
                   <div style="display:flex; justify-content:flex-end; gap: 10px;">
-                    <button class="btn primary btn-save-prompt" data-index="4">💾 Lưu Prompt 4</button>
-                    <button class="btn accent btn-generate-single" data-index="4" disabled>🎨 Sinh ảnh 4</button>
+                    <button class="btn secondary btn-save-prompt" data-index="4">Lưu prompt 4</button>
                   </div>
                 </div>
               </div>
             </div>
           </div> <!-- Close prompts-accordion -->
           </div> <!-- Close card-body flex-grow -->
-          <div class="card-footer mt-4">
-            <button id="btn-push-notion" class="btn accent w-full big-btn">🚀 Đẩy bài lên Notion</button>
+          <div class="card-footer notion-footer">
+            <p class="desc-text">Notion: <strong>Content đang làm</strong> · Facebook: <strong>Chưa đăng</strong></p>
+            <button id="btn-push-notion" class="btn accent big-btn">Đẩy bài lên Notion <span aria-hidden="true">↗</span></button>
           </div>
         </div>
       </section>
@@ -287,19 +318,19 @@
       <section class="workspace-section col-right">
         <div class="card glass">
           <div class="card-header">
-            <h3>🖥️ Trình duyệt điều khiển</h3>
+            <h2>Kết nối ChatGPT</h2>
           </div>
           <div class="card-body">
             <p class="desc-text" id="chrome-login-hint" role="status">Lần đầu: mở Chrome đăng nhập ChatGPT, đóng cửa sổ đó rồi kết nối Debug. Những lần sau chỉ cần kết nối Debug.</p>
             <button id="btn-login-chrome" class="btn secondary w-full mt-3">1. Mở Chrome đăng nhập</button>
-            <button id="btn-start-chrome" class="btn primary w-full mt-2">2. Kết nối Chrome Debug</button>
-            <button id="btn-check-chrome" class="btn secondary w-full mt-2">🔍 Kiểm tra và khóa tab</button>
+            <button id="btn-start-chrome" class="btn secondary w-full mt-2">2. Kết nối Chrome Debug</button>
+            <button id="btn-check-chrome" class="btn secondary w-full mt-2">Kiểm tra và khóa tab</button>
           </div>
         </div>
 
         <div class="card glass mt-4 flex-grow flex-col log-card">
           <div class="card-header flex-row justify-between">
-            <h3>📋 Nhật ký tự động hóa</h3>
+            <h2>Nhật ký hoạt động</h2>
             <button id="btn-clear-logs" class="btn text-btn">Xóa</button>
           </div>
           <div class="card-body flex-grow log-container" id="log-box">
@@ -311,34 +342,37 @@
     </div>
 
     <main id="facebook-panel" class="facebook-workspace product-panel" hidden>
+      <div class="workspace-intro"><div><p class="eyebrow">PAGE FACEBOOK</p><h2>Nội dung mạng xã hội</h2><p class="desc-text">Chọn sản phẩm từ Notion, duyệt bài và đưa nội dung cùng ảnh lên Page.</p></div></div>
       <section class="facebook-column">
         <div class="card glass">
-          <div class="card-header"><h3>Facebook Page & mẫu bài đăng</h3></div>
+          <div class="card-header"><h2>Cấu hình Page</h2></div>
           <div class="card-body">
             <div class="form-group"><label for="facebook-page-url">URL Page Facebook</label><input id="facebook-page-url" type="url" placeholder="https://www.facebook.com/ten-page"></div>
             <div class="form-group"><label for="facebook-media-parent">Thư mục gốc ảnh Facebook</label><div class="input-with-button"><input id="facebook-media-parent" type="text" readonly placeholder="Chọn thư mục gốc chứa các thư mục sản phẩm"><button id="btn-select-facebook-media" class="btn secondary">Duyệt</button></div></div>
             <div class="form-group"><label for="facebook-template">Mẫu bài đăng tham khảo (không bắt buộc)</label><textarea id="facebook-template" rows="6" placeholder="Dán một bài đăng mẫu nếu muốn AI tham khảo cách trình bày. Prompt chính được quản lý ở khung Tạo & đăng bài Facebook."></textarea></div>
-            <button id="btn-save-facebook-config" class="btn primary w-full">Lưu cấu hình Facebook</button>
+            <button id="btn-save-facebook-config" class="btn secondary w-full">Lưu cấu hình Facebook</button>
           </div>
         </div>
         <div class="card glass mt-4">
-          <div class="card-header"><h3>Profile Facebook Debug</h3></div>
+          <div class="card-header"><h2>Kết nối Facebook</h2></div>
           <div class="card-body">
             <p class="desc-text">Mở profile riêng, đăng nhập tài khoản có quyền quản trị Page trước khi đăng.</p>
-            <button id="btn-start-facebook" class="btn primary w-full">Mở Facebook Debug (Port 9223)</button>
+            <button id="btn-start-facebook" class="btn secondary w-full mt-3">Mở profile Facebook Debug</button>
           </div>
         </div>
       </section>
       <section class="facebook-column facebook-main-column">
         <div class="card glass h-full flex-col">
-          <div class="card-header"><h3>Tạo & đăng bài Facebook</h3></div>
+          <div class="card-header"><h2>Soạn bài Facebook</h2></div>
           <div class="card-body flex-grow">
-            <div class="form-group"><div class="pending-products-heading"><label>Sản phẩm chờ đăng Facebook</label><div class="pending-products-actions"><button id="btn-refresh-facebook-products" class="btn secondary btn-compact">↻ Quét Notion</button><button id="btn-confirm-facebook-published" class="btn accent btn-compact" title="Quét các bài Chờ đăng và xác nhận đã đăng thủ công trên Facebook">✓ Quét Chờ đăng → Đã đăng</button></div></div><div id="facebook-pending-products" class="facebook-pending-products" aria-live="polite">Đang chờ quét danh sách sản phẩm.</div><p class="desc-text">Chọn 1 sản phẩm có trạng thái Facebook “Chưa đăng” để tạo nội dung. Sau khi đăng thủ công trên Facebook, dùng nút xác nhận để chuyển các bài “Chờ đăng” sang “Đã đăng”.</p></div>
+            <div class="form-group"><div class="pending-products-heading"><h3>Sản phẩm chưa đăng</h3><div class="pending-products-actions"><button id="btn-refresh-facebook-products" class="btn secondary btn-compact">Quét Notion</button><button id="btn-confirm-facebook-published" class="btn secondary btn-compact" title="Quét các bài Chờ đăng và xác nhận đã đăng thủ công trên Facebook">Chờ đăng → Đã đăng</button></div></div><div id="facebook-pending-products" class="facebook-pending-products" aria-live="polite">Đang chờ quét danh sách sản phẩm.</div><p class="desc-text">Chọn một sản phẩm để tạo bài. Chỉ xác nhận “Đã đăng” sau khi bạn đã đăng thủ công trên Facebook.</p></div>
             <div id="facebook-product-info" class="facebook-product-info">Chưa tải dữ liệu sản phẩm.</div>
-            <section class="facebook-prompt-manager mt-4" aria-labelledby="facebook-prompt-manager-title">
+            <details class="facebook-prompt-manager mt-4">
+              <summary>Thư viện prompt AI <span>Chọn, chỉnh sửa hoặc nhập / xuất prompt</span></summary>
+              <div class="facebook-prompt-editor">
               <div class="facebook-prompt-manager-header">
                 <div>
-                  <h4 id="facebook-prompt-manager-title">Prompt AI viết bài</h4>
+                  <h3 id="facebook-prompt-manager-title">Prompt AI viết bài</h3>
                   <p class="desc-text">AI luôn nhận tên sản phẩm, link web và mẫu tham khảo; prompt dưới đây quyết định cách AI viết.</p>
                 </div>
                 <span id="facebook-prompt-status" class="facebook-prompt-status" data-state="saved" aria-live="polite">Đã lưu</span>
@@ -366,13 +400,14 @@
                 <button id="btn-import-facebook-prompts" class="btn secondary" type="button">Nhập thư viện</button>
                 <input id="facebook-prompts-import-file" type="file" accept="application/json,.json" hidden>
               </div>
-            </section>
+              </div>
+            </details>
             <div class="form-group mt-4"><label for="facebook-content">Nội dung bài đăng</label><textarea id="facebook-content" class="editor-textarea" placeholder="AI sẽ tạo bài đăng dựa trên mẫu, Link web và Media sản phẩm từ Notion."></textarea></div>
           </div>
-          <div class="card-footer facebook-actions"><button id="btn-generate-facebook" class="btn primary">Tạo bài bằng AI</button><button id="btn-publish-facebook" class="btn accent">Đưa nội dung & ảnh lên Facebook</button></div>
+          <div class="card-footer facebook-actions"><button id="btn-generate-facebook" class="btn primary">Tạo bài bằng AI</button><button id="btn-publish-facebook" class="btn secondary">Đưa nội dung & ảnh lên Facebook</button></div>
         </div>
       </section>
-      <section class="facebook-column facebook-log-column"><div class="card glass h-full flex-col log-card"><div class="card-header"><h3>Nhật ký Facebook</h3></div><div id="facebook-log-box" class="card-body flex-grow log-container"></div></div></section>
+      <section class="facebook-column facebook-log-column"><div class="card glass h-full flex-col log-card"><div class="card-header"><h2>Nhật ký Facebook</h2></div><div id="facebook-log-box" class="card-body flex-grow log-container"></div></div></section>
     </main>
   </div>
 
@@ -380,7 +415,7 @@
   <div id="folder-modal" class="modal" style="display:none;">
     <div class="modal-content glass">
       <div class="modal-header">
-        <h3>📂 Duyệt thư mục ổ G</h3>
+        <h3>Chọn thư mục trên máy</h3>
         <button id="btn-close-modal" class="close-btn">✕</button>
       </div>
       <div class="modal-body">
@@ -401,7 +436,7 @@
   <div id="completion-modal" class="completion-modal" hidden role="dialog" aria-modal="true" aria-labelledby="completion-title">
     <div class="completion-card">
       <div class="completion-icon" aria-hidden="true">✓</div>
-      <h3 id="completion-title">Hoàn thành</h3>
+      <h2 id="completion-title">Hoàn thành</h2>
       <p id="completion-message"></p>
       <div class="completion-actions">
         <a id="completion-notion-link" class="btn primary" target="_blank" rel="noreferrer" hidden>Mở trên Notion</a>

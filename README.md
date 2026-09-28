@@ -38,6 +38,14 @@ URL được ChatGPT cập nhật sau khi gửi không còn tự động bị co
 
 ## Build
 
+### Giao diện v1.2.24
+
+Danh mục sản phẩm có sẵn 12 lựa chọn theo website Derma. Giao diện Website/Facebook dùng chung cấu hình có thể thu gọn, hỗ trợ sáng/tối và không giới hạn nội dung trong các cột cuộn chật. Mỗi dòng ảnh có nút sinh riêng, chỉ thông báo thành công sau khi backend lưu ảnh xong. Luồng xử lý ChatGPT/Google Drive/Notion/Facebook được giữ nguyên.
+
+Logo PC mới được áp dụng trên Windows và macOS. Nguồn ảnh và cách tạo lại định dạng icon ở [docs/APP_ICON.md](docs/APP_ICON.md).
+
+### Tạo bộ cài
+
 ```bash
 npm run electron-build
 npm run electron-build-mac
