@@ -876,7 +876,7 @@ app.post('/api/chrome/login', async (req, res) => {
     const port = config.chromeDebugPort || 9222;
     const profileDir = config.chromeUserDataDir || path.join(configDir, 'chatgpt_profile');
     await fs.mkdir(profileDir, { recursive: true });
-    await ensureChromeManual({ port, profileDir, restartProfile: req.body?.restartProfile === true,
+    await ensureChromeManual({ port, profileDir, binding: managedChatSession, restartProfile: req.body?.restartProfile === true,
       launch: launchChromeDebug, onProgress: message => addLog(message, 'info') });
     managedChatSession = null;
     recordChromeState('login', 'manual');
@@ -885,8 +885,11 @@ app.post('/api/chrome/login', async (req, res) => {
     res.json({ success: true, ready: false, state: 'manual', message });
   } catch (error) {
     const needsConfirmation = error.code === 'CHROME_PROFILE_RESTART_REQUIRED';
-    if (!needsConfirmation) { managedChatSession = null; recordChromeState('login', 'connection_error'); }
-    res.status(needsConfirmation ? 409 : 500).json({ error: error.message, code: error.code });
+    if (!needsConfirmation) {
+      if (managedChatSession) managedChatSession.ready = false;
+      recordChromeState('login', 'connection_error');
+    }
+    res.status(needsConfirmation || error.code === 'CHROME_PROFILE_PROCESS_UNAVAILABLE' ? 409 : 500).json({ error: error.message, code: error.code });
   }
   finally { chromeLaunchBusy = false; }
 });

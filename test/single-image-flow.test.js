@@ -140,6 +140,7 @@ test(`single-image API saves the correct numbered result (${layout} layout) and 
   assert.equal(await fs.stat(path.join(root, 'products')).then(() => true).catch(() => false), false);
   const loginWhileDebug = await fetch(`${base}/api/chrome/login`, { method: 'POST' });
   assert.equal(loginWhileDebug.status, 409, 'manual login must never spawn into the running automated profile');
+  assert.equal((await fetch(`${base}/api/chrome/login`, { method: 'POST' })).status, 409, 'a repeated click must retain the same profile guard');
   assert.equal(context.pages().length, 1);
   await page.goto('https://chatgpt.com/c/test-product');
   const connected = await post('/api/chrome/connect', {});

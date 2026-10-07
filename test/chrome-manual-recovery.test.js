@@ -60,3 +60,12 @@ test('a Debug endpoint with no configured profile cannot cause another profile t
   await ensureChromeManual(f.options, f.dependencies);
   assert.deepEqual(f.calls, [['launch', null, profileDir, 'https://chatgpt.com', false]]);
 });
+
+test('a bound Debug session missing from the process list blocks a new manual launch', async () => {
+  const f = fixture();
+  f.dependencies.isProfileOpen = async () => false;
+  const binding = { profileDir, endpoint: 'ws://127.0.0.1:9222/fixture' };
+  await assert.rejects(ensureChromeManual({ ...f.options, binding }, f.dependencies), { code: 'CHROME_PROFILE_PROCESS_UNAVAILABLE' });
+  await assert.rejects(ensureChromeManual({ ...f.options, binding, restartProfile: true }, f.dependencies), { code: 'CHROME_PROFILE_PROCESS_UNAVAILABLE' });
+  assert.deepEqual(f.calls, []);
+});
