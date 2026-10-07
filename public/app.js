@@ -928,8 +928,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const buttons = [btnLoginChrome, btnStartChrome, btnCheckChrome];
     buttons.forEach(button => { button.disabled = true; });
     try {
-      const res = await fetch(route, { method: 'POST' });
-      const data = await res.json();
+      let res = await fetch(route, { method: 'POST' });
+      let data = await res.json();
+      if (route === '/api/chrome/start' && data.code === 'CHROME_PROFILE_RESTART_REQUIRED') {
+        if (!window.confirm(data.error)) {
+          chromeLoginHint.textContent = 'Đã hủy chuyển chế độ. Profile đăng nhập vẫn giữ nguyên; khi sẵn sàng, bấm Kết nối Chrome Debug.';
+          return;
+        }
+        chromeLoginHint.textContent = 'Đang chuyển profile sang Chrome Debug, giữ nguyên tài khoản...';
+        res = await fetch(route, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ restartProfile: true })
+        });
+        data = await res.json();
+      }
       if (res.ok) {
         chromeLoginHint.textContent = data.message;
         appendLocalLog(data.message, data.ready ? 'success' : 'info');

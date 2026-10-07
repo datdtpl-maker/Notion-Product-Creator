@@ -35,6 +35,7 @@ const { createApiClientPool } = require("./lib/api-client-pool");
 const { ensureChatGptComposer, fillChatGptPrompt } = require("./lib/chatgpt-composer");
 const { readDebugEndpoint, bindChatGptSession, connectBoundChatGpt } = require('./lib/chatgpt-session');
 const { manualLoginArgs, isChromeProfileOpen } = require('./lib/chrome-login');
+const { ensureChromeDebug } = require('./lib/chrome-debug-start');
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -876,7 +877,7 @@ app.post('/api/chrome/login', async (req, res) => {
       await launchChromeDebug(null, profileDir, 'https://chatgpt.com');
     }
     managedChatSession = null;
-    const message = `${alreadyOpen ? 'Profile đăng nhập đang mở.' : 'Đã mở Chrome đăng nhập thủ công, chưa kết nối điều khiển.'} Đăng nhập ChatGPT, sau đó đóng các cửa sổ của profile này và bấm Kết nối Chrome Debug. Cookie và tài khoản được giữ nguyên.`;
+    const message = `${alreadyOpen ? 'Profile đăng nhập đang mở.' : 'Đã mở Chrome đăng nhập thủ công, chưa kết nối điều khiển.'} Đăng nhập ChatGPT xong, bấm “2. Kết nối Chrome Debug” và xác nhận chuyển chế độ. Tool giữ nguyên profile, cookie và tài khoản.`;
     addLog(message, 'info');
     res.json({ success: true, ready: false, message });
   } catch (error) { res.status(500).json({ error: error.message }); }
@@ -894,19 +895,10 @@ app.post("/api/chrome/start", async (req, res) => {
 
     await fs.mkdir(userDataDir, { recursive: true });
 
-    let endpoint = await readDebugEndpoint(port).catch(() => null);
-    if (!endpoint) {
-      if (await isChromeProfileOpen(userDataDir)) {
-        return res.status(409).json({ error: 'Profile đang mở để đăng nhập thủ công. Đăng nhập xong, đóng các cửa sổ Chrome của profile này rồi bấm Kết nối Chrome Debug. Không cần đăng xuất tài khoản.' });
-      }
-      addLog('Đang mở Chrome Debug với profile đã cấu hình...', 'info');
-      await launchChromeDebug(port, userDataDir, 'https://chatgpt.com', true);
-      for (let attempt = 0; attempt < 30 && !endpoint; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        endpoint = await readDebugEndpoint(port).catch(() => null);
-      }
-    }
-    if (!endpoint) throw new Error('Chrome Debug chưa khởi động được.');
+    const endpoint = await ensureChromeDebug({
+      port, profileDir: userDataDir, restartProfile: req.body?.restartProfile === true,
+      launch: launchChromeDebug, onProgress: message => addLog(message, 'info')
+    });
     managedChatSession = await bindChatGptSession(chromium, endpoint, userDataDir);
     const message = managedChatSession.ready
       ? 'Đã khóa đúng profile và tab ChatGPT sẵn sàng. Bạn có thể sinh ảnh.'
@@ -914,7 +906,9 @@ app.post("/api/chrome/start", async (req, res) => {
     addLog(message, managedChatSession.ready ? 'success' : 'info');
     res.json({ success: true, ready: managedChatSession.ready, message });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const needsConfirmation = err.code === 'CHROME_PROFILE_RESTART_REQUIRED';
+    addLog(err.message, needsConfirmation ? 'info' : 'error');
+    res.status(needsConfirmation ? 409 : 500).json({ error: err.message, code: err.code });
   } finally { chromeLaunchBusy = false; }
 });
 
@@ -931,7 +925,10 @@ app.post('/api/chrome/connect', async (req, res) => {
       : 'Tab hiện tại còn tải trang, đăng nhập hoặc xác minh. Tool chưa gửi lệnh và không tự mở tab khác.';
     addLog(message, managedChatSession.ready ? 'success' : 'info');
     res.json({ success: true, ready: managedChatSession.ready, message });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+  } catch (error) {
+    addLog(error.message, 'error');
+    res.status(500).json({ error: error.message, code: error.code });
+  }
   finally { chromeLaunchBusy = false; }
 });
 
