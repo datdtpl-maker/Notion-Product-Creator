@@ -9,8 +9,34 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  prepare-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test "$(node -p 'require("./package.json").version')" = "$VERSION"
+          if DRAFT="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            test "$DRAFT" = "true" || { echo "Refusing to overwrite a published release"; exit 1; }
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --draft --title "Notion Product Creator $GITHUB_REF_NAME" \
+              --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+          fi
+
   build-windows:
+    needs: prepare-release
+    if: always() && !cancelled() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
     runs-on: windows-latest
     steps:
       - name: Checkout source
@@ -34,13 +60,30 @@ jobs:
         run: npm run electron-build
 
       - name: Upload Windows installer
+        if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@v4
         with:
           name: Notion-Product-Creator-Windows-${{ github.ref_name }}
           path: dist-electron/*.exe
           if-no-files-found: error
 
+      - name: Attach Windows installer to draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $installers = @(Get-ChildItem -LiteralPath 'dist-electron' -Filter '*.exe' -File)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          $asset = "dist-electron/Notion.Product.Creator.Setup.$version.exe"
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $asset
+          gh release upload $env:GITHUB_REF_NAME $asset --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   build-macos:
+    needs: prepare-release
+    if: always() && !cancelled() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
     runs-on: macos-latest
     steps:
       - name: Checkout source
@@ -82,53 +125,38 @@ jobs:
         run: npm run electron-build-mac
 
       - name: Upload macOS installer
+        if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@v4
         with:
           name: Notion-Product-Creator-macOS-${{ github.ref_name }}
           path: dist-electron/*.dmg
           if-no-files-found: error
 
-  publish-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-windows, build-macos]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout release notes
-        uses: actions/checkout@v4
-
-      - name: Download Windows installer
-        uses: actions/download-artifact@v4
-        with:
-          name: Notion-Product-Creator-Windows-${{ github.ref_name }}
-          path: release-assets/windows
-
-      - name: Download macOS installer
-        uses: actions/download-artifact@v4
-        with:
-          name: Notion-Product-Creator-macOS-${{ github.ref_name }}
-          path: release-assets/macos
-
-      - name: Normalize installer names
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          WINDOWS_FILE="$(find release-assets/windows -type f -name '*.exe' | head -n 1)"
-          MACOS_FILE="$(find release-assets/macos -type f -name '*.dmg' | head -n 1)"
-          test -n "$WINDOWS_FILE"
-          test -n "$MACOS_FILE"
-          cp "$WINDOWS_FILE" "release-assets/Notion.Product.Creator.Setup.${VERSION}.exe"
-          cp "$MACOS_FILE" "release-assets/Notion.Product.Creator.${VERSION}.Universal.dmg"
-
-      - name: Create GitHub Release
+      - name: Attach macOS installer to draft release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" \
-            "release-assets/Notion.Product.Creator.Setup.${VERSION}.exe" \
-            "release-assets/Notion.Product.Creator.${VERSION}.Universal.dmg" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "Notion Product Creator ${GITHUB_REF_NAME}" \
-            --notes-file "docs/releases/${GITHUB_REF_NAME}.md"
+          INSTALLERS=(dist-electron/*.dmg)
+          test "${#INSTALLERS[@]}" -eq 1
+          ASSET="dist-electron/Notion.Product.Creator.$VERSION.Universal.dmg"
+          cp "${INSTALLERS[0]}" "$ASSET"
+          gh release upload "$GITHUB_REF_NAME" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish only after both installers are attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ASSETS="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.size > 1000000) | .name')"
+          grep -Fxq "Notion.Product.Creator.Setup.$VERSION.exe" <<< "$ASSETS"
+          grep -Fxq "Notion.Product.Creator.$VERSION.Universal.dmg" <<< "$ASSETS"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
