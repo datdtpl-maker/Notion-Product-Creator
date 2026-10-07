@@ -65,6 +65,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSaveKey = document.getElementById("btn-save-key");
   const btnStartChrome = document.getElementById("btn-start-chrome");
   const btnLoginChrome = document.getElementById("btn-login-chrome");
+  const btnManualChrome = document.getElementById('btn-manual-chrome');
+  const btnDiagnoseChrome = document.getElementById('btn-diagnose-chrome');
+  let chromeActionBusy = false;
   const chromeLoginHint = document.getElementById("chrome-login-hint");
   let chatGptReady = false;
   let imageGenerationBusy = false;
@@ -554,14 +557,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/api/chrome/status");
       const data = await res.json();
       const singleGenBtns = document.querySelectorAll(".btn-generate-single");
-      chatGptReady = Boolean(data.ready);
+      chatGptReady = Boolean(data.ready) && !chromeActionBusy;
+      const stateLabels = { verification_required: 'ChatGPT: Chờ xác minh', auth_error: 'ChatGPT: Lỗi đăng nhập', login_required: 'ChatGPT: Chưa đăng nhập', loading: 'ChatGPT: Đang tải', manual: 'Chrome: Đăng nhập thủ công', connection_error: 'Chrome: Lỗi kết nối' };
+      btnManualChrome.hidden = !['verification_required', 'auth_error', 'login_required', 'connection_error'].includes(data.state);
       if (data.online) {
         chromeStatusBadge.className = `status-badge ${chatGptReady ? 'online' : 'offline'}`;
-        chromeStatusText.textContent = chatGptReady ? 'ChatGPT: Sẵn sàng' : 'Chrome: Chưa khóa tab';
+        chromeStatusText.textContent = chatGptReady ? 'ChatGPT: Sẵn sàng' : stateLabels[data.state] || 'Chrome: Chưa khóa tab';
         singleGenBtns.forEach(btn => btn.disabled = !chatGptReady || imageGenerationBusy);
       } else {
         chromeStatusBadge.className = "status-badge offline";
-        chromeStatusText.textContent = "Chrome Debug: Offline";
+        chromeStatusText.textContent = stateLabels[data.state] || 'Chrome Debug: Offline';
         singleGenBtns.forEach(btn => btn.disabled = true);
       }
     } catch (err) {
@@ -925,17 +930,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   async function runChromeAction(route) {
-    const buttons = [btnLoginChrome, btnStartChrome, btnCheckChrome];
+    const buttons = [btnLoginChrome, btnStartChrome, btnCheckChrome, btnManualChrome, btnDiagnoseChrome];
+    chromeActionBusy = true;
+    chatGptReady = false;
+    document.querySelectorAll('.btn-generate-single').forEach(button => { button.disabled = true; });
     buttons.forEach(button => { button.disabled = true; });
+    if (route === '/api/chrome/diagnose') chromeLoginHint.textContent = 'Đang quan sát kết nối khoảng 6 giây; không tải lại trang hoặc gửi prompt...';
     try {
       let res = await fetch(route, { method: 'POST' });
       let data = await res.json();
-      if (route === '/api/chrome/start' && data.code === 'CHROME_PROFILE_RESTART_REQUIRED') {
+      if (['/api/chrome/start', '/api/chrome/login'].includes(route) && data.code === 'CHROME_PROFILE_RESTART_REQUIRED') {
         if (!window.confirm(data.error)) {
-          chromeLoginHint.textContent = 'Đã hủy chuyển chế độ. Profile đăng nhập vẫn giữ nguyên; khi sẵn sàng, bấm Kết nối Chrome Debug.';
+          chromeLoginHint.textContent = 'Đã hủy chuyển chế độ. Profile Chrome vẫn giữ nguyên.';
           return;
         }
-        chromeLoginHint.textContent = 'Đang chuyển profile sang Chrome Debug, giữ nguyên tài khoản...';
+        chromeLoginHint.textContent = 'Đang chuyển chế độ Chrome, giữ nguyên tài khoản...';
         res = await fetch(route, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ restartProfile: true })
@@ -945,7 +954,16 @@ document.addEventListener("DOMContentLoaded", () => {
       if (res.ok) {
         chromeLoginHint.textContent = data.message;
         appendLocalLog(data.message, data.ready ? 'success' : 'info');
-        await checkChromeStatus();
+        if (route === '/api/chrome/diagnose' && data.report) {
+          const url = URL.createObjectURL(new Blob([JSON.stringify(data.report, null, 2)], { type: 'application/json' }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'notion-product-creator-chrome-diagnostic.json';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
       } else {
         throw new Error(data.error);
       }
@@ -954,12 +972,16 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLocalLog(err.message, "error");
       alert(err.message);
     } finally {
+      chromeActionBusy = false;
       buttons.forEach(button => { button.disabled = false; });
+      await checkChromeStatus();
     }
   }
   btnLoginChrome.addEventListener('click', () => runChromeAction('/api/chrome/login'));
   btnStartChrome.addEventListener('click', () => runChromeAction('/api/chrome/start'));
   btnCheckChrome.addEventListener('click', () => runChromeAction('/api/chrome/connect'));
+  btnManualChrome.addEventListener('click', () => runChromeAction('/api/chrome/login'));
+  btnDiagnoseChrome.addEventListener('click', () => runChromeAction('/api/chrome/diagnose'));
 
   // Clear local logs
   btnClearLogs.addEventListener("click", async () => {

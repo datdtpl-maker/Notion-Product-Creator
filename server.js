@@ -34,8 +34,9 @@ const { getGoogleDriveFileId, downloadGoogleDriveLogo } = require("./lib/logo-im
 const { createApiClientPool } = require("./lib/api-client-pool");
 const { ensureChatGptComposer, fillChatGptPrompt } = require("./lib/chatgpt-composer");
 const { readDebugEndpoint, bindChatGptSession, connectBoundChatGpt } = require('./lib/chatgpt-session');
-const { manualLoginArgs, isChromeProfileOpen } = require('./lib/chrome-login');
-const { ensureChromeDebug } = require('./lib/chrome-debug-start');
+const { manualLoginArgs } = require('./lib/chrome-login');
+const { ensureChromeDebug, ensureChromeManual } = require('./lib/chrome-debug-start');
+const { connectionMessage, createConnectionHistory } = require('./lib/chatgpt-connection-state');
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -159,6 +160,12 @@ let activeServerPort = null;
 let imageJob = { status: 'idle', completed: [] };
 let managedChatSession = null;
 let chromeLaunchBusy = false;
+let chromeConnectionState = 'offline';
+const chromeConnectionHistory = createConnectionHistory();
+function recordChromeState(action, state) {
+  chromeConnectionState = state;
+  chromeConnectionHistory.record(action, state);
+}
 const addLog = (message, type = "info") => {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = { timestamp, message, type };
@@ -868,19 +875,19 @@ app.post('/api/chrome/login', async (req, res) => {
     const config = await loadConfig();
     const port = config.chromeDebugPort || 9222;
     const profileDir = config.chromeUserDataDir || path.join(configDir, 'chatgpt_profile');
-    if (await readDebugEndpoint(port).catch(() => null)) {
-      return res.status(409).json({ error: 'Hãy đóng các cửa sổ Chrome Debug của tool rồi bấm Mở Chrome đăng nhập. Tool không tự đóng trình duyệt hoặc xóa cookie.' });
-    }
-    const alreadyOpen = await isChromeProfileOpen(profileDir);
-    if (!alreadyOpen) {
-      await fs.mkdir(profileDir, { recursive: true });
-      await launchChromeDebug(null, profileDir, 'https://chatgpt.com');
-    }
+    await fs.mkdir(profileDir, { recursive: true });
+    await ensureChromeManual({ port, profileDir, restartProfile: req.body?.restartProfile === true,
+      launch: launchChromeDebug, onProgress: message => addLog(message, 'info') });
     managedChatSession = null;
-    const message = `${alreadyOpen ? 'Profile đăng nhập đang mở.' : 'Đã mở Chrome đăng nhập thủ công, chưa kết nối điều khiển.'} Đăng nhập ChatGPT xong, bấm “2. Kết nối Chrome Debug” và xác nhận chuyển chế độ. Tool giữ nguyên profile, cookie và tài khoản.`;
+    recordChromeState('login', 'manual');
+    const message = connectionMessage('manual');
     addLog(message, 'info');
-    res.json({ success: true, ready: false, message });
-  } catch (error) { res.status(500).json({ error: error.message }); }
+    res.json({ success: true, ready: false, state: 'manual', message });
+  } catch (error) {
+    const needsConfirmation = error.code === 'CHROME_PROFILE_RESTART_REQUIRED';
+    if (!needsConfirmation) { managedChatSession = null; recordChromeState('login', 'connection_error'); }
+    res.status(needsConfirmation ? 409 : 500).json({ error: error.message, code: error.code });
+  }
   finally { chromeLaunchBusy = false; }
 });
 
@@ -899,14 +906,15 @@ app.post("/api/chrome/start", async (req, res) => {
       port, profileDir: userDataDir, restartProfile: req.body?.restartProfile === true,
       launch: launchChromeDebug, onProgress: message => addLog(message, 'info')
     });
+    managedChatSession = null;
     managedChatSession = await bindChatGptSession(chromium, endpoint, userDataDir);
-    const message = managedChatSession.ready
-      ? 'Đã khóa đúng profile và tab ChatGPT sẵn sàng. Bạn có thể sinh ảnh.'
-      : 'Chrome đã mở nhưng ChatGPT chưa sẵn sàng. Tool giữ nguyên tab, không mở thêm. Khi thấy ô nhập ChatGPT, bấm Kiểm tra và khóa tab.';
+    recordChromeState('start', managedChatSession.state);
+    const message = connectionMessage(managedChatSession.state);
     addLog(message, managedChatSession.ready ? 'success' : 'info');
-    res.json({ success: true, ready: managedChatSession.ready, message });
+    res.json({ success: true, ready: managedChatSession.ready, state: managedChatSession.state, message });
   } catch (err) {
     const needsConfirmation = err.code === 'CHROME_PROFILE_RESTART_REQUIRED';
+    if (!needsConfirmation) { managedChatSession = null; recordChromeState('start', 'connection_error'); }
     addLog(err.message, needsConfirmation ? 'info' : 'error');
     res.status(needsConfirmation ? 409 : 500).json({ error: err.message, code: err.code });
   } finally { chromeLaunchBusy = false; }
@@ -920,16 +928,48 @@ app.post('/api/chrome/connect', async (req, res) => {
     const endpoint = await readDebugEndpoint(config.chromeDebugPort || 9222);
     const profileDir = config.chromeUserDataDir || path.join(configDir, 'chatgpt_profile');
     managedChatSession = await bindChatGptSession(chromium, endpoint, profileDir, managedChatSession);
-    const message = managedChatSession.ready
-      ? 'ChatGPT đã sẵn sàng, đã khóa đúng tab để sinh ảnh.'
-      : 'Tab hiện tại còn tải trang, đăng nhập hoặc xác minh. Tool chưa gửi lệnh và không tự mở tab khác.';
+    recordChromeState('check', managedChatSession.state);
+    const message = connectionMessage(managedChatSession.state);
     addLog(message, managedChatSession.ready ? 'success' : 'info');
-    res.json({ success: true, ready: managedChatSession.ready, message });
+    res.json({ success: true, ready: managedChatSession.ready, state: managedChatSession.state, message });
   } catch (error) {
+    if (managedChatSession) managedChatSession.ready = false;
+    recordChromeState('check', 'connection_error');
     addLog(error.message, 'error');
     res.status(500).json({ error: error.message, code: error.code });
   }
   finally { chromeLaunchBusy = false; }
+});
+
+app.post('/api/chrome/diagnose', async (req, res) => {
+  if (chromeLaunchBusy || imageJob.status === 'running') return res.status(409).json({ error: 'Hãy đợi thao tác Chrome hoặc tạo ảnh hiện tại hoàn tất.' });
+  chromeLaunchBusy = true;
+  const report = {
+    schemaVersion: 1, appVersion: require('./package.json').version, platform: process.platform,
+    createdAt: new Date().toISOString(), state: chromeConnectionState,
+    debugAvailable: false, observation: null,
+    note: 'Chỉ quan sát trong thời gian bấm chẩn đoán; không tải lại trang. Không có sự kiện mạng không có nghĩa kết nối đã thành công. Không chứa URL đầy đủ, nội dung chat, cookie, token hoặc mật khẩu.'
+  };
+  try {
+    const config = await loadConfig();
+    const endpoint = await readDebugEndpoint(config.chromeDebugPort || 9222);
+    report.debugAvailable = true;
+    const profileDir = config.chromeUserDataDir || path.join(configDir, 'chatgpt_profile');
+    const inspected = await bindChatGptSession(chromium, endpoint, profileDir, managedChatSession, { diagnose: true });
+    report.state = inspected.state;
+    report.observation = inspected.observation || null;
+    // Diagnostics may invalidate readiness, but never enable image sending by themselves.
+    if (!inspected.ready && managedChatSession) { managedChatSession.ready = false; managedChatSession.state = inspected.state; }
+    if (!managedChatSession) managedChatSession = { ...inspected, ready: false };
+  } catch (error) {
+    report.error = ['CHROME_DEBUG_UNAVAILABLE', 'CHROME_DEBUG_INVALID'].includes(error.code) ? error.code : 'CHROME_INSPECTION_FAILED';
+    report.state = chromeConnectionState === 'manual' && error.code === 'CHROME_DEBUG_UNAVAILABLE' ? 'manual' : 'connection_error';
+    if (managedChatSession) managedChatSession.ready = false;
+  } finally { chromeLaunchBusy = false; }
+  recordChromeState('diagnose', report.state);
+  report.history = chromeConnectionHistory.snapshot();
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, report, message: 'Đã tạo báo cáo chẩn đoán không chứa thông tin đăng nhập. Báo cáo không tự gửi đi; bạn có thể đính kèm file để được hỗ trợ.' });
 });
 
 // Check Chrome Debug Status
@@ -945,11 +985,12 @@ app.get("/api/chrome/status", async (req, res) => {
     });
     clearTimeout(timeout);
     const version = response.ok ? await response.json() : {};
-    const ready = Boolean(response.ok && managedChatSession?.ready && managedChatSession.endpoint === version.webSocketDebuggerUrl);
-    res.json({ online: response.ok, ready });
+    const sameSession = managedChatSession?.endpoint === version.webSocketDebuggerUrl;
+    const ready = Boolean(response.ok && sameSession && managedChatSession?.ready && !chromeLaunchBusy);
+    res.json({ online: response.ok, ready, state: sameSession || ['manual', 'connection_error'].includes(chromeConnectionState) ? chromeConnectionState : 'offline' });
   } catch {
     clearTimeout(timeout);
-    res.json({ online: false, ready: false });
+    res.json({ online: false, ready: false, state: ['manual', 'connection_error'].includes(chromeConnectionState) ? chromeConnectionState : 'offline' });
   }
 });
 
@@ -1108,6 +1149,7 @@ app.post("/api/chrome/generate-single-image", async (req, res) => {
   }
   const startIndex = Number(promptIndex);
   if (!Number.isInteger(startIndex) || startIndex < 1 || startIndex > 4) return res.status(400).json({ error: 'Số prompt phải từ 1 đến 4.' });
+  if (chromeLaunchBusy) return res.status(409).json({ error: 'Chrome đang kết nối hoặc chẩn đoán. Hãy đợi thao tác này hoàn tất trước khi sinh ảnh.' });
   if (imageJob.status === 'running') return res.status(409).json({ error: 'Tool đang tạo và lưu ảnh. Hãy chờ ảnh hiện tại hoàn tất.' });
   if (!managedChatSession?.ready) return res.status(409).json({ error: 'ChatGPT chưa sẵn sàng. Đăng nhập xong rồi bấm Kiểm tra và khóa tab trước khi sinh ảnh.' });
   imageJob = { id: nodeCrypto.randomUUID(), status: 'running', current: startIndex, completed: [] };

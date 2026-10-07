@@ -32,6 +32,7 @@ test('binding during OpenAI login keeps the original tab and waits for manual lo
   assert.equal(fixture.createdTabs(), 0);
   assert.equal(result.targetId, 'original');
   assert.equal(result.ready, false);
+  assert.equal(result.state, 'verification_required', 'verification must not be presented as generic loading');
 });
 
 test('startup blank tab is left alone instead of creating a replacement', async () => {
@@ -39,6 +40,7 @@ test('startup blank tab is left alone instead of creating a replacement', async 
   const result = await bindChatGptSession(fixture.chromium, 'ws://127.0.0.1:9222/test', fixture.profileDir);
   assert.equal(fixture.createdTabs(), 0);
   assert.equal(result.ready, false);
+  assert.equal(result.state, 'loading');
 });
 
 test('manual sign-in launches the same profile without debugging or automation flags', () => {
